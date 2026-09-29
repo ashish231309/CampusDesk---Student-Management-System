@@ -1,0 +1,28 @@
+{
+  "name": "campusdesk",
+  "version": "0.1.0",
+  "private": true,
+  "description": "CampusDesk — a student management system for campus administrators.",
+  "license": "MIT",
+  "author": "Ashish Kumar",
+  "type": "module",
+  "engines": {
+    "node": ">=20.19.0"
+  },
+  "workspaces": [
+    "client",
+    "server"
+  ],
+  "scripts": {
+    "dev": "concurrently --names api,web --prefix-colors magenta,cyan \"npm:dev:server\" \"npm:dev:client\"",
+    "dev:server": "npm run dev --workspace server",
+    "dev:client": "npm run dev --workspace client",
+    "start": "npm run start --workspace server",
+    "build": "npm run build --workspace client",
+    "lint": "npm run lint --workspaces --if-present",
+    "verify": "npm run verify --workspace server"
+  },
+  "devDependencies": {
+    "concurrently": "^10.0.5"
+  }
+}

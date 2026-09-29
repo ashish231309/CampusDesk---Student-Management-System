@@ -1,0 +1,36 @@
+{
+  "name": "@campusdesk/server",
+  "version": "0.1.0",
+  "private": true,
+  "description": "CampusDesk REST API — Express + MongoDB",
+  "license": "MIT",
+  "type": "module",
+  "main": "src/server.js",
+  "engines": {
+    "node": ">=20.19.0"
+  },
+  "scripts": {
+    "dev": "node --watch src/server.js",
+    "start": "node src/server.js",
+    "lint": "eslint .",
+    "verify": "node scripts/verify-foundation.js"
+  },
+  "dependencies": {
+    "bcryptjs": "^3.0.3",
+    "compression": "^1.8.2",
+    "cors": "^2.8.6",
+    "dotenv": "^18.0.4",
+    "express": "^5.2.1",
+    "express-rate-limit": "^8.7.0",
+    "express-validator": "^7.3.2",
+    "helmet": "^8.3.0",
+    "jsonwebtoken": "^9.0.2",
+    "mongoose": "^9.10.3",
+    "morgan": "^1.12.1"
+  },
+  "devDependencies": {
+    "@eslint/js": "^10.0.1",
+    "eslint": "^10.11.0",
+    "globals": "^17.12.0"
+  }
+}

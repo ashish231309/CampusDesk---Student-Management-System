@@ -1,0 +1,121 @@
+import { useEffect, useRef } from 'react';
+import { createPortal } from 'react-dom';
+import { AnimatePresence, motion } from 'motion/react';
+import { X } from 'lucide-react';
+
+import { cx } from '../../utils/cx.js';
+import { IconButton } from './Button.jsx';
+
+const SIZES = {
+  sm: 'max-w-md',
+  md: 'max-w-lg',
+  lg: 'max-w-2xl',
+};
+
+/**
+ * Accessible dialog: Escape closes, the page behind stops scrolling, focus
+ * moves into the panel on open and animation is handled by Motion so the
+ * transition matches the rest of the app.
+ */
+export const Modal = ({
+  open,
+  onClose,
+  title,
+  description,
+  children,
+  footer,
+  size = 'md',
+  tone = 'default',
+}) => {
+  const panelRef = useRef(null);
+  const titleId = 'campusdesk-modal-title';
+  const descriptionId = 'campusdesk-modal-description';
+
+  useEffect(() => {
+    if (!open) return undefined;
+
+    const handleKeyDown = (event) => {
+      if (event.key === 'Escape') onClose?.();
+    };
+
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    document.addEventListener('keydown', handleKeyDown);
+    panelRef.current?.focus();
+
+    return () => {
+      document.body.style.overflow = previousOverflow;
+      document.removeEventListener('keydown', handleKeyDown);
+    };
+  }, [open, onClose]);
+
+  if (typeof document === 'undefined') return null;
+
+  return createPortal(
+    <AnimatePresence>
+      {open ? (
+        <>
+          <motion.div
+            key="backdrop"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            transition={{ duration: 0.18 }}
+            onClick={onClose}
+            className="fixed inset-0 z-[90] bg-charcoal/45 backdrop-blur-[2px]"
+            aria-hidden="true"
+          />
+
+          <div className="pointer-events-none fixed inset-0 z-[95] flex items-end justify-center p-3 sm:items-center sm:p-6">
+            <motion.div
+              key="panel"
+              ref={panelRef}
+              tabIndex={-1}
+              role="dialog"
+              aria-modal="true"
+              aria-labelledby={title ? titleId : undefined}
+              aria-describedby={description ? descriptionId : undefined}
+              initial={{ opacity: 0, y: 24, scale: 0.98 }}
+              animate={{ opacity: 1, y: 0, scale: 1 }}
+              exit={{ opacity: 0, y: 12, scale: 0.985 }}
+              transition={{ type: 'spring', stiffness: 320, damping: 30 }}
+              className={cx(
+                'pointer-events-auto w-full rounded-card border border-line/70 bg-surface shadow-raised outline-none',
+                SIZES[size] ?? SIZES.md,
+              )}
+            >
+              <header className="flex items-start justify-between gap-4 border-b border-line/60 px-5 py-4">
+                <div className="min-w-0">
+                  <h2 id={titleId} className="text-base font-semibold text-ink">
+                    {title}
+                  </h2>
+                  {description ? (
+                    <p id={descriptionId} className="mt-1 text-[13px] leading-relaxed text-muted">
+                      {description}
+                    </p>
+                  ) : null}
+                </div>
+
+                <IconButton icon={X} label="Close dialog" onClick={onClose} />
+              </header>
+
+              {children ? <div className="px-5 py-4">{children}</div> : null}
+
+              {footer ? (
+                <footer
+                  className={cx(
+                    'flex flex-col-reverse gap-2 border-t border-line/60 px-5 py-4 sm:flex-row sm:justify-end',
+                    tone === 'danger' && 'bg-danger/[0.04]',
+                  )}
+                >
+                  {footer}
+                </footer>
+              ) : null}
+            </motion.div>
+          </div>
+        </>
+      ) : null}
+    </AnimatePresence>,
+    document.body,
+  );
+};

@@ -1,0 +1,110 @@
+@import 'tailwindcss';
+
+/* ---------------------------------------------------------------------------
+   CampusDesk design tokens.
+   The palette is intentionally narrow: beige + dark grey carry the identity,
+   with a small supporting set for status and feedback. Anything outside this
+   list should not appear in the product.
+--------------------------------------------------------------------------- */
+@theme {
+  --font-sans:
+    'Plus Jakarta Sans', ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+
+  /* Surfaces */
+  --color-canvas: #f7f4f1;
+  --color-surface: #ffffff;
+
+  /* Brand */
+  --color-beige: #ddd0c8;
+  --color-beige-strong: #CBBBAF; /* hover / active beige */
+  --color-charcoal: #323232;
+
+  /* Text */
+  --color-ink: #242424;
+  --color-muted: #6b6b6b;
+
+  /* Lines */
+  --color-line: #d6d0cb;
+
+  /* Feedback */
+  --color-success: #3f7d5a;
+  --color-warning: #b7791f;
+  --color-danger: #b94a48;
+  --color-info: #58758c;
+
+  --shadow-card: 0 1px 2px rgb(50 50 50 / 0.04), 0 10px 30px -22px rgb(50 50 50 / 0.28);
+  --shadow-raised: 0 2px 6px rgb(50 50 50 / 0.06), 0 22px 45px -28px rgb(50 50 50 / 0.35);
+
+  --radius-card: 1rem;
+  --radius-field: 0.625rem;
+}
+
+@layer base {
+  html {
+    -webkit-text-size-adjust: 100%;
+    scroll-behavior: smooth;
+  }
+
+  body {
+    @apply bg-canvas text-ink font-sans antialiased;
+    min-height: 100dvh;
+  }
+
+  h1,
+  h2,
+  h3,
+  h4 {
+    @apply text-ink font-semibold tracking-tight;
+    text-wrap: balance;
+  }
+
+  p {
+    text-wrap: pretty;
+  }
+
+  ::selection {
+    background-color: var(--color-beige);
+    color: var(--color-ink);
+  }
+
+  :focus-visible {
+    outline: 2px solid var(--color-charcoal);
+    outline-offset: 2px;
+  }
+
+  /* Quiet scrollbars keep tables and drawers calm. */
+  * {
+    scrollbar-width: thin;
+    scrollbar-color: var(--color-line) transparent;
+  }
+
+  *::-webkit-scrollbar {
+    width: 10px;
+    height: 10px;
+  }
+
+  *::-webkit-scrollbar-thumb {
+    background-color: var(--color-line);
+    border: 3px solid transparent;
+    border-radius: 999px;
+    background-clip: content-box;
+  }
+}
+
+@utility focus-ring {
+  @apply outline-none focus-visible:ring-2 focus-visible:ring-charcoal/30 focus-visible:ring-offset-2 focus-visible:ring-offset-canvas;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html {
+    scroll-behavior: auto;
+  }
+
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
