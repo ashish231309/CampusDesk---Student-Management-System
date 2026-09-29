@@ -3041,6 +3041,10 @@ await check('transitions stay subtle and nothing suppresses motion globally', ()
     'rows should not animate for decoration',
   );
   assert(
+    !/duration-(?:500|700|1000)\b/.test(clientSource),
+    'no slow decorative transitions should sneak into the interface',
+  );
+  assert(
     cssSource.includes('prefers-reduced-motion'),
     'the reduced-motion query should still be honoured',
   );

@@ -284,7 +284,7 @@ export default function DashboardPage() {
 
                     <div className="mt-2 h-2 overflow-hidden rounded-full bg-canvas-deep">
                       <div
-                        className="h-full rounded-full bg-beige-strong transition-[width] duration-700 ease-out"
+                        className="h-full rounded-full bg-beige-strong transition-[width] duration-200 ease-out"
                         style={{ width: `${(row.count / maxDepartmentCount) * 100}%` }}
                       />
                     </div>
