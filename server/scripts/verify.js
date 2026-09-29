@@ -4327,6 +4327,73 @@ await check('the update payload is allowlisted end to end', async () => {
   assert(({}).polluted === undefined, 'no prototype pollution survives the request');
 });
 
+await check('a failure the API did not plan for leaks nothing', async () => {
+  // Whatever a dependency throws, the caller only ever sees a generic message, a
+  // machine-readable code and no details. The hostile message below is what a real
+  // driver error can look like: a connection string with credentials, a source
+  // path, a bcrypt hash and a token.
+  const hostile = new Error(
+    'connect failed for mongodb+srv://campusdesk:sup3rSecret@cluster0.example.net/campusdesk ' +
+      'while loading /srv/campusdesk/server/src/services/studentService.js ' +
+      '(hash $2b$10$abcdefghijklmnopqrstuvwxyz0123456789ABCDEF, token ' +
+      'eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiJhZG1pbiJ9.signature)',
+  );
+
+  const response = await withModelStubs(
+    {
+      ...userStubs,
+      Student: {
+        find: () => chainableQuery([]),
+        countDocuments: async () => {
+          throw hostile;
+        },
+      },
+    },
+    () => stubRequest('GET', '/api/students'),
+  );
+
+  assert(response.status === 500, `an unplanned failure should answer 500, received ${response.status}`);
+  assert(response.body.success === false, 'a failure keeps the standard envelope');
+  assert(response.body.error.code === 'INTERNAL_ERROR', `unexpected code: ${response.body.error.code}`);
+  assert(
+    response.body.error.message === 'Something went wrong on our end. Please try again.',
+    'the caller is told nothing beyond the fact that the request failed',
+  );
+  assert(response.body.error.details === undefined, 'no details are invented for an unplanned failure');
+  assert(response.body.data === undefined, 'and no data accompanies a failure');
+
+  const faced = JSON.stringify({
+    code: response.body.error.code,
+    message: response.body.error.message,
+    details: response.body.error.details ?? null,
+  });
+
+  for (const [what, pattern] of [
+    ['a connection string', /mongodb(\+srv)?:\/\//i],
+    ['a credential', /sup3rSecret/],
+    ['a host name', /cluster0\.example\.net/],
+    ['a file path or file name', /\/srv\/|\.js\b|studentService/],
+    ['a bcrypt hash', /\$2[aby]\$/],
+    ['a token', /eyJ[A-Za-z0-9_-]{8,}/],
+    ['a driver or model name', /MongoServerSelectionError|countDocuments|Mongoose/i],
+  ]) {
+    assert(!pattern.test(faced), `what the caller sees must not carry ${what}`);
+  }
+
+  // The stack exists for the developer: it stays a property of its own, never a
+  // message, and the shipped handler attaches it only outside production and
+  // never to the operational 503.
+  const attached = response.body.error.stack;
+  assert(attached === undefined || typeof attached === 'string', 'a stack may only be attached as its own field');
+  assert(!String(response.body.error.message).includes('\n    at '), 'the message is never a stack trace');
+
+  const handler = readFileSync(new URL('../src/middleware/errorHandler.js', import.meta.url), 'utf8');
+  assert(
+    /if \(!env\.isProduction && apiError\.statusCode >= 500 && apiError\.statusCode !== 503\)/.test(handler),
+    'a stack trace is attached only outside production, and never to an operational 503',
+  );
+});
+
 await check('nothing the API returns carries password material', async () => {
   const password = 'passw0rd123';
   const saved = [];
