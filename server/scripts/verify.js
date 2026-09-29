@@ -11,7 +11,7 @@
 process.env.NODE_ENV = 'test';
 
 const { once } = await import('node:events');
-const { readFileSync, readdirSync } = await import('node:fs');
+const { mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } = await import('node:fs');
 const express = (await import('express')).default;
 const jwt = (await import('jsonwebtoken')).default;
 
@@ -1424,6 +1424,351 @@ await check('credential endpoints carry a tighter limiter', async () => {
 });
 
 // ---------------------------------------------------------------------------
+section('Client data layer (real client modules against the real API)');
+// ---------------------------------------------------------------------------
+
+/**
+ * The browser bundle is built by Vite, so these modules cannot simply be
+ * imported here. They are bundled with the same bundler Vite uses (rolldown)
+ * and run with the browser globals they expect, which means the checks below
+ * execute the *real* `studentService` → `apiClient` path: arguments → query
+ * string → HTTP request → real Express app → real validators and controllers →
+ * response envelope → the object a component receives.
+ *
+ * `apiClient`, `studentService` and the error mapper are built as one graph, so
+ * they share a single module instance — the session state and the
+ * `onUnauthorized` listeners are the same ones the application uses.
+ */
+const bundleClient = async (entries, { baseUrl }) => {
+  const { rolldown } = await import('rolldown');
+  const directory = new URL('../.client-bundle/', import.meta.url);
+
+  const bundle = await rolldown({
+    input: Object.fromEntries(
+      Object.entries(entries).map(([name, relative]) => [
+        name,
+        new URL(`../../client/src/${relative}`, import.meta.url).pathname,
+      ]),
+    ),
+    platform: 'browser',
+  });
+
+  const { output } = await bundle.generate({ format: 'esm' });
+  mkdirSync(directory, { recursive: true });
+
+  const written = [];
+  for (const chunk of output) {
+    // Vite replaces `import.meta.env` at build time; Node has no such object,
+    // so the harness supplies the same values through a global.
+    const code = chunk.code.replaceAll('import.meta.env', 'globalThis.__CLIENT_ENV__');
+    writeFileSync(new URL(chunk.fileName, directory), code);
+    written.push(chunk.fileName);
+  }
+
+  globalThis.__CLIENT_ENV__ = { VITE_API_BASE_URL: baseUrl, VITE_API_TIMEOUT_MS: '15000' };
+  globalThis.window ??= {};
+  globalThis.window.location = { origin: 'http://localhost' };
+  globalThis.window.localStorage ??= (() => {
+    const store = new Map();
+    return {
+      getItem: (key) => (store.has(key) ? store.get(key) : null),
+      setItem: (key, value) => store.set(key, String(value)),
+      removeItem: (key) => store.delete(key),
+    };
+  })();
+
+  const loaded = Object.fromEntries(
+    await Promise.all(
+      Object.entries(entries).map(async ([name]) => [
+        name,
+        await import(new URL(`${name}.js`, directory)),
+      ]),
+    ),
+  );
+
+  return {
+    loaded,
+    cleanup: () => rmSync(directory, { recursive: true, force: true }),
+    written,
+  };
+};
+
+const clientBundle = await bundleClient(
+  {
+    studentService: 'services/studentService.js',
+    apiClient: 'services/apiClient.js',
+    apiErrors: 'utils/apiErrors.js',
+  },
+  { baseUrl: `${stubUrl}/api` },
+);
+
+const { studentService: clientApi } = clientBundle.loaded.studentService;
+const { authToken, onUnauthorized, ApiRequestError } = clientBundle.loaded.apiClient;
+const { describeLoadError, errorMessage } = clientBundle.loaded.apiErrors;
+
+/** Model stand-ins for one list call, recording what reached the query. */
+const withListStubs = (run, { total = 12 } = {}) => {
+  const query = chainableQuery([fakeDocument()]);
+  const seen = {};
+
+  return withModelStubs(
+    {
+      ...userStubs,
+      Student: {
+        find: (filter) => {
+          seen.filter = filter;
+          return query;
+        },
+        countDocuments: async () => total,
+      },
+    },
+    () => run(seen, query),
+  );
+};
+
+await check('the client list call reaches the API with its search, filters, sort and page', async () => {
+  // A token in storage is what `apiClient` sends: the API answering 200 (rather
+  // than 401) is what proves the request carried the session.
+  authToken.set(adminToken);
+
+  const { result, seen, query } = await withListStubs(async (captured, chain) => {
+    const value = await clientApi.list({
+      search: 'sharma',
+      status: 'active',
+      year: '3rd Year',
+      department: 'Computer Science',
+      course: 'B.Tech Computer Science',
+      sort: '-name',
+      page: 2,
+      limit: 8,
+    });
+
+    return { result: value, seen: captured, query: chain };
+  });
+
+  assert(Array.isArray(result.students), 'the client should receive the rows array');
+  assert(result.students.length === 1, 'the row the API returned should come through');
+  assert(result.meta?.total === 12, `the pagination total should survive the envelope, got ${result.meta?.total}`);
+  assert(result.meta.page === 2 && result.meta.limit === 8, `unexpected page metadata: ${JSON.stringify(result.meta)}`);
+  assert(result.meta.totalPages === 2, `expected 2 pages for 12 rows of 8, got ${result.meta.totalPages}`);
+
+  assert(seen.filter.enrollmentStatus === 'active', 'the status filter should reach the database query');
+  assert(seen.filter.year === '3rd Year', 'the year filter should reach the database query');
+  // Department and course are matched case-insensitively but anchored, so the
+  // filter arrives as a regex rather than a bare string.
+  assert(
+    seen.filter.department instanceof RegExp && seen.filter.department.test('computer science'),
+    `the department filter should reach the database query, got ${seen.filter.department}`,
+  );
+  assert(
+    !seen.filter.department.test('Computer Science and Engineering'),
+    'the department filter must stay anchored, not substring-matched',
+  );
+  assert(
+    seen.filter.course instanceof RegExp && seen.filter.course.test('B.TECH COMPUTER SCIENCE'),
+    `the course filter should reach the database query, got ${seen.filter.course}`,
+  );
+  const searchPatterns = seen.filter.$or
+    .flatMap((clause) => Object.values(clause))
+    .filter((value) => value instanceof RegExp);
+  assert(
+    searchPatterns.some((pattern) => pattern.source.includes('sharma')),
+    `the search term should reach the database query as a pattern, got ${searchPatterns.map((p) => p.source).join(', ')}`,
+  );
+  assert(
+    searchPatterns.every((pattern) => pattern.test('ANANYA SHARMA')),
+    'the search should be case-insensitive',
+  );
+
+  assert(query.sortCalls[0] === '-name', `the client's sort value should reach the query, got ${query.sortCalls[0]}`);
+  assert(query.skipped === 8, `page 2 of 8 rows should skip 8, skipped ${query.skipped}`);
+  assert(query.limited === 8, `the page size should reach the query, got ${query.limited}`);
+});
+
+await check('blank filters are left out of the request entirely', async () => {
+  authToken.set(adminToken);
+
+  const seen = await withListStubs(
+    (captured) => clientApi.list({ status: 'active', page: 1 }).then(() => captured),
+    { total: 1 },
+  );
+
+  assert(seen.filter.enrollmentStatus === 'active', 'the used filter should reach the query');
+  assert(!('department' in seen.filter), 'an empty department must not be sent as a filter');
+  assert(!('year' in seen.filter), 'an empty year must not be sent as a filter');
+  assert(!('$or' in seen.filter), 'an empty search must not become a regex');
+});
+
+await check('the client cannot list students without a session', async () => {
+  authToken.clear();
+
+  let failure = null;
+  try {
+    await withListStubs(() => clientApi.list({ page: 1 }));
+  } catch (error) {
+    failure = error;
+  }
+
+  assert(failure instanceof ApiRequestError, `expected an ApiRequestError, got ${failure}`);
+  assert(failure.status === 401, `expected 401, received ${failure.status}`);
+  assert(failure.isUnauthorized, 'the failure should be recognisable as an authentication problem');
+});
+
+await check('a refused token clears the session and notifies the app', async () => {
+  let notified = 0;
+  const unsubscribe = onUnauthorized(() => {
+    notified += 1;
+  });
+
+  authToken.set('a-token-signed-by-nobody');
+
+  let failure = null;
+  try {
+    await withListStubs(() => clientApi.list({ page: 1 }));
+  } catch (error) {
+    failure = error;
+  } finally {
+    unsubscribe();
+  }
+
+  assert(failure?.status === 401, `expected the API to refuse the token, got ${failure?.status}`);
+  assert(notified === 1, `the session listener should fire exactly once, fired ${notified}`);
+  assert(authToken.get() === null, 'the rejected token should be discarded');
+});
+
+await check('detail, create, update and delete call the right endpoints', async () => {
+  authToken.set(adminToken);
+  const document = fakeDocument();
+  let createdPayload = null;
+
+  const detail = await withModelStubs(
+    { ...userStubs, Student: { findById: async () => document } },
+    () => clientApi.getById(document.id),
+  );
+  assert(detail.id === document.id, `detail should return the record, got ${JSON.stringify(detail)}`);
+
+  const created = await withModelStubs(
+    {
+      ...userStubs,
+      Student: {
+        create: async (payload) => {
+          createdPayload = payload;
+          return fakeDocument({ id: 'new-id' });
+        },
+      },
+    },
+    () =>
+      clientApi.create({
+        name: 'Ananya Sharma',
+        email: 'ananya.sharma@campusdesk.edu',
+        phone: '+91 98220 41182',
+        course: 'B.Tech Computer Science',
+        year: '3rd Year',
+        department: 'Computer Science',
+        enrollmentStatus: 'active',
+      }),
+  );
+
+  assert(created.id === 'new-id', `create should return the created record, got ${JSON.stringify(created)}`);
+  assert(createdPayload.studentId === undefined, 'the client must never supply a student ID');
+  assert(createdPayload.name === 'Ananya Sharma', 'the payload should reach the service intact');
+
+  const updated = await withModelStubs(
+    { ...userStubs, Student: { findById: async () => fakeDocument() } },
+    () => clientApi.update(document.id, { year: '4th Year' }),
+  );
+  assert(updated.year === '4th Year', `update should return the saved record, got ${JSON.stringify(updated)}`);
+
+  const removed = await withModelStubs(
+    { ...userStubs, Student: { findById: async () => fakeDocument() } },
+    () => clientApi.remove(document.id),
+  );
+  assert(removed?.deleted === true, `delete should confirm the removal, got ${JSON.stringify(removed)}`);
+});
+
+await check('a malformed id and an unknown id are told apart by the client', async () => {
+  authToken.set(adminToken);
+
+  const malformed = await withModelStubs({ ...userStubs }, () =>
+    clientApi.getById('not-an-id').then(
+      (value) => ({ ok: true, value }),
+      (error) => ({ ok: false, error }),
+    ),
+  );
+
+  assert(malformed.ok === false, 'a malformed id must not resolve');
+  assert(malformed.error.status === 422, `expected 422, received ${malformed.error.status}`);
+  assert(
+    describeLoadError(malformed.error).kind === 'missing',
+    'a malformed id should read as a missing record, not as an outage',
+  );
+
+  const missing = await withModelStubs({ ...userStubs, Student: { findById: async () => null } }, () =>
+    clientApi.getById('64b7f9c2e1a2b3c4d5e6f7a8').then(
+      (value) => ({ ok: true, value }),
+      (error) => ({ ok: false, error }),
+    ),
+  );
+
+  assert(missing.error.status === 404, `expected 404, received ${missing.error.status}`);
+  assert(describeLoadError(missing.error).kind === 'missing', 'an unknown id should read as a missing record');
+  assert(missing.value === undefined, 'a missing record must not resolve to a value');
+});
+
+await check('the dashboard calls the statistics endpoint and reads its aggregation', async () => {
+  authToken.set(adminToken);
+
+  const stats = await withModelStubs(
+    {
+      ...userStubs,
+      Student: {
+        aggregate: async () => [
+          {
+            byStatus: [
+              { _id: 'active', count: 8 },
+              { _id: 'inactive', count: 2 },
+            ],
+            byDepartment: [{ _id: 'Computer Science', count: 7 }],
+            byYear: [{ _id: '3rd Year', count: 10 }],
+            total: [{ value: 10 }],
+            recentRegistrations: [
+              { _id: 'r1', name: 'Meera', dateOfRegistration: new Date('2026-08-01') },
+            ],
+          },
+        ],
+      },
+    },
+    () => clientApi.stats(),
+  );
+
+  assert(stats.total === 10, `unexpected total: ${stats.total}`);
+  assert(stats.active === 8 && stats.inactive === 2, 'the status split should come from the API');
+  assert(stats.byDepartment[0].department === 'Computer Science', 'department rows should be mapped');
+  assert(stats.byYear[0].year === '3rd Year', 'year rows should be mapped');
+  assert(stats.recentRegistrations[0].id === 'r1', 'recent registrations should be usable rows');
+});
+
+await check('a database outage reads as "unavailable", not as a missing record', async () => {
+  authToken.set(adminToken);
+
+  // No model stubs: this is the API's real behaviour while MongoDB is down.
+  const failure = await clientApi.list({ page: 1 }).then(
+    () => null,
+    (error) => error,
+  );
+
+  assert(failure !== null, 'the call should fail while the database is unreachable');
+  assert(failure.status === 503, `expected 503, received ${failure.status}`);
+
+  const described = describeLoadError(failure);
+  assert(described.kind === 'unavailable', `expected an "unavailable" state, got ${described.kind}`);
+  assert(/temporarily unavailable|database/i.test(described.message), `unexpected message: ${described.message}`);
+  assert(!/MongoServerSelectionError|ECONNREFUSED|mongodb:\/\//i.test(errorMessage(failure)), 'internals must not reach the UI');
+});
+
+clientBundle.cleanup();
+
+// ---------------------------------------------------------------------------
 section('HTTP surface');
 // ---------------------------------------------------------------------------
 
@@ -1645,6 +1990,45 @@ await check('the client uses the real authentication endpoints', () => {
 
   for (const endpoint of ['/auth/register', '/auth/login', '/auth/logout', '/auth/me']) {
     assert(service.includes(endpoint), `authService should call ${endpoint}`);
+  }
+});
+
+await check('the student screens no longer read a sample dataset', () => {
+  const removed = ['sampleStudents', 'SAMPLE_DATA_IN_USE', 'data/sampleStudents'];
+  const files = readdirSync(clientRoot, { withFileTypes: true })
+    .filter((entry) => entry.isDirectory())
+    .map((entry) => entry.name);
+
+  assert(!files.includes('data'), 'the shared sample-data directory should be gone');
+
+  for (const identifier of removed) {
+    assert(!clientSource.includes(identifier), `\`${identifier}\` still appears in the client source`);
+  }
+});
+
+await check('the student hooks and pages go through studentService', () => {
+  const list = readFileSync(new URL('hooks/useStudentList.js', clientRoot), 'utf8');
+  const detail = readFileSync(new URL('hooks/useStudent.js', clientRoot), 'utf8');
+  const dashboard = readFileSync(new URL('hooks/useDashboardSummary.js', clientRoot), 'utf8');
+
+  for (const [name, source] of [['useStudentList', list], ['useStudent', detail], ['useDashboardSummary', dashboard]]) {
+    assert(source.includes("from '../services/studentService.js'"), `${name} should use studentService`);
+    assert(!/\bfetch\(/.test(source), `${name} must not call fetch directly`);
+  }
+
+  assert(list.includes('studentService') && list.includes('.list('), 'the list hook should call the list endpoint');
+  assert(detail.includes('.getById('), 'the detail hook should call the detail endpoint');
+  assert(dashboard.includes('.stats('), 'the dashboard hook should call the statistics endpoint');
+});
+
+await check('no page talks to the API without the service layer', () => {
+  const pages = readdirSync(new URL('pages/', clientRoot), { withFileTypes: true })
+    .filter((entry) => entry.isFile() && entry.name.endsWith('.jsx'))
+    .map((entry) => [entry.name, readFileSync(new URL(`pages/${entry.name}`, clientRoot), 'utf8')]);
+
+  for (const [name, source] of pages) {
+    assert(!/\bfetch\(/.test(source), `${name} must not call fetch directly`);
+    assert(!source.includes("from '../services/apiClient.js'"), `${name} must go through a service, not apiClient`);
   }
 });
 

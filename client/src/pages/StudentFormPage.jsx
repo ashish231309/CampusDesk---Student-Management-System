@@ -9,9 +9,11 @@ import { buttonClasses } from '../components/ui/buttonStyles.js';
 import { Card, CardBody, CardHeader } from '../components/ui/Card.jsx';
 import { Field, Select, TextInput } from '../components/ui/Field.jsx';
 import { SegmentedControl } from '../components/ui/SegmentedControl.jsx';
-import { EmptyState } from '../components/ui/States.jsx';
+import { EmptyState, ErrorState } from '../components/ui/States.jsx';
 import { Spinner } from '../components/ui/Spinner.jsx';
 import { useToast } from '../context/toastContext.js';
+import { useAuth } from '../context/authContext.js';
+import { errorMessage } from '../utils/apiErrors.js';
 import { useForm } from '../hooks/useForm.js';
 import { useStudent } from '../hooks/useStudent.js';
 import { studentService } from '../services/studentService.js';
@@ -56,18 +58,45 @@ export default function StudentFormPage({ mode = 'create' }) {
   const { id } = useParams();
   const navigate = useNavigate();
   const toast = useToast();
+  const { user } = useAuth();
 
-  const { student, status: studentStatus } = useStudent(isEdit ? id : null);
+  const { student, status: studentStatus, error: studentError, refresh } = useStudent(
+    isEdit ? id : null,
+  );
+
+  /**
+   * The registration date is an administrative fact: the API only lets an
+   * administrator change it once a record exists, so a staff account sees it
+   * read-only instead of being handed a field that will be refused. The server
+   * enforces the same rule regardless of what this screen offers.
+   */
+  const canEditRegistrationDate = !isEdit || user?.role === 'admin';
 
   const form = useForm({
     initialValues: EMPTY_STUDENT,
     schema,
     onSubmit: async (values) => {
+      // An explicit whitelist: `studentId`, timestamps and anything else the
+      // API manages can never be sent from the form, even by accident.
       const payload = {
-        ...values,
-        avatarUrl: values.avatarUrl?.trim() || undefined,
-        dateOfRegistration: new Date(values.dateOfRegistration).toISOString(),
+        name: values.name,
+        email: values.email,
+        phone: values.phone,
+        course: values.course,
+        year: values.year,
+        department: values.department,
+        enrollmentStatus: values.enrollmentStatus,
+        avatarUrl: values.avatarUrl?.trim() || '',
       };
+
+      const wantsNewDate =
+        Boolean(values.dateOfRegistration) &&
+        (!isEdit ||
+          new Date(values.dateOfRegistration).toISOString() !==
+            new Date(student?.dateOfRegistration ?? 0).toISOString());
+
+      if (wantsNewDate) payload.dateOfRegistration = new Date(values.dateOfRegistration).toISOString();
+      else delete payload.dateOfRegistration;
 
       try {
         const saved = isEdit
@@ -81,7 +110,9 @@ export default function StudentFormPage({ mode = 'create' }) {
 
         navigate(saved?.id ? paths.student(saved.id) : paths.students, { replace: true });
       } catch (error) {
-        toast.error(error.message, isEdit ? 'Could not save changes' : 'Could not add student');
+        // `useForm` merges the API's field-level `details` into the form; the
+        // toast carries the summary sentence.
+        toast.error(errorMessage(error), isEdit ? 'Could not save changes' : 'Could not add student');
         throw error;
       }
     },
@@ -100,7 +131,25 @@ export default function StudentFormPage({ mode = 'create' }) {
     });
   }, [isEdit, reset, student]);
 
-  if (isEdit && studentStatus === 'not-found') {
+  if (isEdit && studentStatus === 'error') {
+    return (
+      <PageTransition>
+        <PageHeader
+          title="Student unavailable"
+          breadcrumbs={[{ label: 'Students', to: paths.students }, { label: 'Unavailable' }]}
+        />
+        <Card>
+          <ErrorState
+            title="This student could not be loaded"
+            description={errorMessage(studentError)}
+            onRetry={refresh}
+          />
+        </Card>
+      </PageTransition>
+    );
+  }
+
+  if (isEdit && studentStatus === 'missing') {
     return (
       <PageTransition>
         <PageHeader
@@ -264,7 +313,16 @@ export default function StudentFormPage({ mode = 'create' }) {
               </div>
 
               <div className="grid gap-5 sm:grid-cols-2">
-                <Field label="Date of registration" required error={form.errorFor('dateOfRegistration')}>
+                <Field
+                  label="Date of registration"
+                  required
+                  error={form.errorFor('dateOfRegistration')}
+                  hint={
+                    canEditRegistrationDate
+                      ? undefined
+                      : 'Only an administrator can change this after the record exists.'
+                  }
+                >
                   <TextInput
                     type="date"
                     name="dateOfRegistration"
@@ -273,6 +331,7 @@ export default function StudentFormPage({ mode = 'create' }) {
                     onChange={form.handleChange('dateOfRegistration')}
                     onBlur={form.handleBlur('dateOfRegistration')}
                     hasError={Boolean(form.errorFor('dateOfRegistration'))}
+                    disabled={!canEditRegistrationDate}
                   />
                 </Field>
 

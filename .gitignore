@@ -34,3 +34,6 @@ coverage/
 .idea/
 .DS_Store
 Thumbs.db
+
+# Verification harness build output (server/scripts/verify.js)
+server/.client-bundle/

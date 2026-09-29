@@ -17,11 +17,12 @@ import { StatusPill } from '../components/ui/Badge.jsx';
 import { buttonClasses } from '../components/ui/buttonStyles.js';
 import { Card, CardHeader } from '../components/ui/Card.jsx';
 import { DataTable } from '../components/ui/DataTable.jsx';
-import { EmptyState } from '../components/ui/States.jsx';
+import { EmptyState, ErrorState } from '../components/ui/States.jsx';
 import { StatCard } from '../components/ui/StatCard.jsx';
 import { StatCardSkeleton } from '../components/ui/Skeleton.jsx';
 import { useAuth } from '../context/authContext.js';
 import { useDashboardSummary } from '../hooks/useDashboardSummary.js';
+import { errorMessage } from '../utils/apiErrors.js';
 import { formatDate, formatRelative } from '../utils/format.js';
 import { paths } from '../routes/paths.js';
 
@@ -62,6 +63,20 @@ export default function DashboardPage() {
           </>
         }
       />
+
+      {summary.isError ? (
+        <Card>
+          <ErrorState
+            title={
+              summary.errorKind === 'forbidden'
+                ? 'You cannot view register statistics'
+                : 'The register summary could not be loaded'
+            }
+            description={errorMessage(summary.error)}
+            onRetry={summary.refresh}
+          />
+        </Card>
+      ) : null}
 
       <section aria-label="Register summary" className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
         {summary.isLoading ? (
@@ -211,6 +226,12 @@ export default function DashboardPage() {
                       <span className="block h-2 w-full rounded bg-line/50" />
                     </div>
                   ))
+                : summary.byDepartment.length === 0
+                ? (
+                    <p className="text-[13px] text-muted">
+                      No students yet — add one and the distribution appears here.
+                    </p>
+                  )
                 : summary.byDepartment.slice(0, 5).map((row) => (
                     <div key={row.label}>
                       <div className="flex items-baseline justify-between gap-3">

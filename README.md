@@ -6,10 +6,11 @@ current and watching enrolment across a campus.
 CampusDesk is built as an npm workspace monorepo: a React client and an Express/MongoDB API that
 share one repository and one set of scripts at the root.
 
-> **Build status:** the foundation, the backend and authentication are complete — project structure,
-> design system, API layering, database models, validation, security middleware, a working student
-> API on MongoDB, and real registration and sign-in. The signed-in student screens still read a
-> design fixture while they are wired to the API, which is the next milestone.
+> **Build status:** the application works end to end — project structure, design system, API
+> layering, database models, validation, security middleware, registration and sign-in, and the
+> student register itself: listing, search, filters, sorting, paging, creation, editing, deletion and
+> dashboard statistics all read and write through the API. What remains is presentation work:
+> the visual and interaction polish of the later stages.
 
 ---
 
@@ -19,8 +20,8 @@ share one repository and one set of scripts at the root.
 | --- | --- |
 | Student registration and sign-in | done — JWT sessions |
 | Automatic student IDs (`CDS-YYYY-NNNN`) | done — generated server-side |
-| Add, edit, view and delete students | API done, interface on sample data |
-| Search, filtering, sorting and pagination | API done, interface on sample data |
+| Add, edit, view and delete students | done — through the API |
+| Search, filtering, sorting and pagination | done — server-side |
 | Interactive dashboard with enrolment summary | done |
 | Responsive layout (mobile → desktop) | done |
 | Animations and micro-interactions | done |
@@ -53,7 +54,6 @@ CampusDesk/
 │       ├── config/             app configuration and navigation
 │       ├── constants/          student domain options
 │       ├── context/            authentication and notification providers
-│       ├── data/               sample records used until the API is live
 │       ├── hooks/              form, search, count-up and data hooks
 │       ├── pages/              one file per route
 │       ├── routes/             route table and path constants
@@ -223,7 +223,10 @@ npm run build       # production client build
 
 `npm run verify` is the fast suite: it exercises the request pipeline over HTTP with the models
 stubbed, so it runs anywhere — including registration, sign-in, token verification, expired and
-forged tokens, the role rules and the removal of the old preview sign-in. `npm run verify:db` is the
+forged tokens, the role rules and the removal of the old preview sign-in. It also bundles the
+client's own data layer (the same bundler Vite uses) and runs it against that API, so the checks
+cover the request the browser actually sends: its search, filters, sort, page, session header and
+error handling. `npm run verify:db` is the
 one that proves the database behaviour — accounts and hashed passwords, sign-in against a stored
 hash, student creation, generated IDs under concurrent writes, search, filters, sorting, pagination,
 statistics and deletion. It uses `VERIFY_MONGODB_URI` if you set one, otherwise your `MONGODB_URI` with the

@@ -17,7 +17,6 @@ import { Avatar } from '../components/ui/Avatar.jsx';
 import { StatusPill } from '../components/ui/Badge.jsx';
 import { Button } from '../components/ui/Button.jsx';
 import { buttonClasses } from '../components/ui/buttonStyles.js';
-import { sampleStudents } from '../data/sampleStudents.js';
 import { appConfig } from '../config/app.js';
 import { paths } from '../routes/paths.js';
 import { formatDate } from '../utils/format.js';
@@ -73,7 +72,45 @@ const STEPS = [
   },
 ];
 
-const preview = sampleStudents.slice(0, 4);
+/**
+ * Illustrative rows for the marketing panel below.
+ *
+ * These are decorative — they exist so a visitor can see what a register looks
+ * like before signing in. They are declared here, in the public page that shows
+ * them, rather than in a shared fixture: no signed-in screen can import them,
+ * and the panel is labelled as an example so it is never mistaken for live
+ * data. The real register comes from the API once a user is signed in.
+ */
+const EXAMPLE_REGISTER = [
+  {
+    id: 'example-1',
+    studentId: 'CDS-2026-0001',
+    name: 'Ananya Sharma',
+    department: 'Computer Science',
+    dateOfRegistration: '2026-07-14',
+  },
+  {
+    id: 'example-2',
+    studentId: 'CDS-2026-0002',
+    name: 'Rohit Menon',
+    department: 'Mechanical Engineering',
+    dateOfRegistration: '2026-07-16',
+  },
+  {
+    id: 'example-3',
+    studentId: 'CDS-2026-0003',
+    name: 'Priya Nair',
+    department: 'Business Administration',
+    dateOfRegistration: '2026-07-21',
+  },
+  {
+    id: 'example-4',
+    studentId: 'CDS-2026-0004',
+    name: 'Ishaan Verma',
+    department: 'Electronics Engineering',
+    dateOfRegistration: '2026-07-29',
+  },
+];
 
 export default function LandingPage() {
   const scopeRef = useRef(null);
@@ -184,13 +221,13 @@ export default function LandingPage() {
               <div className="flex items-center justify-between gap-3">
                 <div>
                   <p className="text-[13px] font-semibold text-ink">Recent registrations</p>
-                  <p className="text-[12px] text-muted">Computer Science · Autumn intake</p>
+                  <p className="text-[12px] text-muted">Example register · Autumn intake</p>
                 </div>
-                <StatusPill status="active" label="Live register" />
+                <StatusPill status="neutral" label="Example" />
               </div>
 
               <ul className="mt-4 space-y-2.5">
-                {preview.map((student) => (
+                {EXAMPLE_REGISTER.map((student) => (
                   <li
                     key={student.id}
                     data-hero="panel-row"

@@ -16,10 +16,12 @@ import { Select } from '../components/ui/Field.jsx';
 import { EmptyState, ErrorState } from '../components/ui/States.jsx';
 import { Pagination } from '../components/ui/Pagination.jsx';
 import { useToast } from '../context/toastContext.js';
+import { errorMessage } from '../utils/apiErrors.js';
 import { useDebouncedValue } from '../hooks/useDebouncedValue.js';
 import { useStudentList } from '../hooks/useStudentList.js';
 import { studentService } from '../services/studentService.js';
 import {
+  COURSE_SUGGESTIONS,
   DEPARTMENTS,
   ENROLLMENT_STATUSES,
   PAGE_SIZE,
@@ -45,12 +47,14 @@ export default function StudentsPage() {
     status: searchParams.get('status') ?? '',
     year: searchParams.get('year') ?? '',
     department: searchParams.get('department') ?? '',
+    course: searchParams.get('course') ?? '',
     sort: searchParams.get('sort') ?? SORT_OPTIONS[0].value,
     page: Number(searchParams.get('page') ?? 1),
     limit: PAGE_SIZE,
   };
 
-  const { items, meta, status, error, isFiltered, isLoading } = useStudentList(filters);
+  const { items, meta, status, error, errorKind, isFiltered, isLoading, refresh } =
+    useStudentList(filters);
 
   const updateFilter = (patch) => {
     const next = new URLSearchParams(searchParams);
@@ -82,8 +86,17 @@ export default function StudentsPage() {
       await studentService.remove(deleteTarget.id);
       toast.success(`${deleteTarget.name} was removed from the register.`, 'Student deleted');
       setDeleteTarget(null);
+      // The API confirmed the delete, so the page is re-read rather than
+      // edited in place — no row can be left behind by a failed request.
+      refresh();
     } catch (deleteError) {
-      toast.error(deleteError.message, 'Could not delete student');
+      if (deleteError.isNotFound) {
+        toast.info('That student was already removed from the register.', 'Already deleted');
+        setDeleteTarget(null);
+        refresh();
+      } else {
+        toast.error(errorMessage(deleteError), 'Could not delete student');
+      }
     } finally {
       setIsDeleting(false);
     }
@@ -248,6 +261,20 @@ export default function StudentsPage() {
             </Select>
 
             <Select
+              aria-label="Filter by course"
+              value={filters.course}
+              onChange={(event) => updateFilter({ course: event.target.value })}
+              className="h-10 w-full text-[13px] sm:w-[200px]"
+            >
+              <option value="">All courses</option>
+              {COURSE_SUGGESTIONS.map((course) => (
+                <option key={course} value={course}>
+                  {course}
+                </option>
+              ))}
+            </Select>
+
+            <Select
               aria-label="Sort students"
               value={filters.sort}
               onChange={(event) => updateFilter({ sort: event.target.value })}
@@ -270,9 +297,9 @@ export default function StudentsPage() {
 
         {status === 'error' ? (
           <ErrorState
-            title="The register could not be loaded"
-            description={error?.message}
-            onRetry={() => window.location.reload()}
+            title={errorKind === 'forbidden' ? 'You cannot view this register' : 'The register could not be loaded'}
+            description={errorMessage(error)}
+            onRetry={refresh}
           />
         ) : (
           <>

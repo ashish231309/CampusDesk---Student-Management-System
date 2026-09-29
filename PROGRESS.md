@@ -51,4 +51,24 @@ file uploads, production hardening.
 Still to come: the signed-in student screens still read the design fixture in
 `client/src/data/sampleStudents.js` — the API they will use already exists.
 
-## Stage 04 — Student data model & REST API  ⏳
+## Stage 04 — Student data layer & REST API integration  ✅
+
+- The student screens now read and write through the API: listing, detail, creation,
+  editing, deletion and dashboard statistics all go through `studentService`
+- Search, filters (status, year, department, course), sorting and pagination are the
+  server's job — the client sends the query and renders the page it receives, and the
+  pagination controls are driven by the API's own metadata
+- `apiClient` keeps the success envelope's `meta` for collection calls, and a rejected
+  token still clears the session through the shared `onUnauthorized` path
+- Loading, empty, not-found, permission, outage and validation states are handled per
+  endpoint; a record that could not be read is never shown as missing
+- The sample student dataset is gone — `client/src/data/` was deleted, along with the
+  "Sample records" indicator. The landing page keeps four clearly-labelled example rows
+  declared inside itself for its marketing panel
+- `npm run verify` gained a client data-layer section that bundles the real client
+  modules and drives them against the running API (99 checks in total, no database)
+
+Still to come: the visual and interaction polish (dashboard and student screens) of the
+later stages, and database-backed verification wherever MongoDB is available.
+
+## Stage 05 — Search, filtering & student operations  ⏳

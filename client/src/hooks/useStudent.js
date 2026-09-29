@@ -1,41 +1,67 @@
-import { useEffect, useState } from 'react';
-import { sampleStudents } from '../data/sampleStudents.js';
+import { useCallback, useEffect, useState } from 'react';
+import { studentService } from '../services/studentService.js';
+import { describeLoadError } from '../utils/apiErrors.js';
 
 /**
- * Single student lookup for the detail and edit views.
+ * A single student record for the detail and edit views.
  *
- * The resolved record is keyed by the requested id, so a change of id reads as
- * "loading" without writing state synchronously inside the effect.
- * Reads the design fixture for now; `studentService.getById` takes over when the
- * student pages are wired to the API.
+ * The resolved record is keyed by the requested id, so changing id reads as
+ * "loading" without writing state synchronously inside the effect — and a
+ * response for a previously-viewed student can never appear on screen.
+ *
+ * `status` is one of `loading`, `ready`, `missing` or `error`:
+ *  - `missing` covers 404 *and* a malformed id (the API answers 422 for those),
+ *    because both mean "there is nothing here to show";
+ *  - anything else that fails — a 403, a database outage, a dropped connection —
+ *    is `error`, so the page does not tell the user a record is gone when it
+ *    simply could not be loaded.
  */
 export const useStudent = (id) => {
-  const key = id === null || id === undefined ? null : String(id);
-  const [resolved, setResolved] = useState({ key: null, status: 'loading', student: null });
+  const key = id === null || id === undefined || id === '' ? null : String(id);
+  const [resolved, setResolved] = useState({ key: null, status: 'loading', student: null, error: null });
+  const [reloadToken, setReloadToken] = useState(0);
+
+  const refresh = useCallback(() => setReloadToken((token) => token + 1), []);
 
   useEffect(() => {
     if (key === null) return undefined;
 
     let active = true;
 
-    // Stands in for the API round-trip the student endpoints will make.
-    const timer = setTimeout(() => {
-      if (!active) return;
-      const student = sampleStudents.find((record) => record.id === key) ?? null;
-      setResolved({ key, status: student ? 'ready' : 'not-found', student });
-    }, 220);
+    studentService
+      .getById(key)
+      .then((student) => {
+        if (!active) return;
+        setResolved(
+          student
+            ? { key, status: 'ready', student, error: null }
+            : { key, status: 'missing', student: null, error: null },
+        );
+      })
+      .catch((error) => {
+        if (!active) return;
+        const { kind } = describeLoadError(error);
+        setResolved({
+          key,
+          status: kind === 'missing' ? 'missing' : 'error',
+          student: null,
+          error,
+        });
+      });
 
     return () => {
       active = false;
-      clearTimeout(timer);
     };
-  }, [key]);
+  }, [key, reloadToken]);
 
   const isCurrent = key !== null && resolved.key === key;
 
   return {
     student: isCurrent ? resolved.student : null,
     status: isCurrent ? resolved.status : 'loading',
+    error: isCurrent ? resolved.error : null,
+    errorKind: isCurrent && resolved.error ? describeLoadError(resolved.error).kind : null,
     isLoading: !isCurrent,
+    refresh,
   };
 };

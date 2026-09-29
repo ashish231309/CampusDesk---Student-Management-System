@@ -1,47 +1,76 @@
-import { useEffect, useMemo, useState } from 'react';
-import { sampleStudents } from '../data/sampleStudents.js';
+import { useCallback, useEffect, useState } from 'react';
+import { studentService } from '../services/studentService.js';
+import { describeLoadError } from '../utils/apiErrors.js';
+
+const EMPTY = {
+  total: 0,
+  active: 0,
+  inactive: 0,
+  departmentCount: 0,
+  byDepartment: [],
+  byYear: [],
+  recent: [],
+};
 
 /**
- * Dashboard summary. Aggregates the design fixture locally for now; the equivalent
- * server-side aggregation already lives in `server/src/services/studentService.js`
- * and will back this hook once students are stored in MongoDB.
+ * Dashboard summary, straight from `GET /api/students/stats`.
+ *
+ * The aggregation is the API's job — counting and grouping in the browser would
+ * only ever describe the page of records the client happens to hold. Rows are
+ * reshaped into the `{ label, count }` the cards read, and the department count
+ * comes from the distribution rather than a second request.
+ *
+ * The payload is tagged with the reload it belongs to, so a refresh shows the
+ * loading state again without writing state synchronously inside the effect.
  */
 export const useDashboardSummary = () => {
-  const [isLoading, setIsLoading] = useState(true);
+  const [reloadToken, setReloadToken] = useState(0);
+  const [state, setState] = useState({ token: null, status: 'loading', stats: null, error: null });
+
+  const refresh = useCallback(() => setReloadToken((token) => token + 1), []);
 
   useEffect(() => {
-    const timer = setTimeout(() => setIsLoading(false), 280);
-    return () => clearTimeout(timer);
-  }, []);
+    let active = true;
 
-  const summary = useMemo(() => {
-    const active = sampleStudents.filter((student) => student.enrollmentStatus === 'active').length;
-    const departments = new Set(sampleStudents.map((student) => student.department));
+    studentService
+      .stats()
+      .then((stats) => {
+        if (active) setState({ token: reloadToken, status: 'ready', stats, error: null });
+      })
+      .catch((error) => {
+        if (active) setState({ token: reloadToken, status: 'error', stats: null, error });
+      });
 
-    const countBy = (key) =>
-      Object.entries(
-        sampleStudents.reduce((acc, student) => {
-          acc[student[key]] = (acc[student[key]] ?? 0) + 1;
-          return acc;
-        }, {}),
-      )
-        .map(([label, count]) => ({ label, count }))
-        .sort((a, b) => b.count - a.count);
-
-    const recent = [...sampleStudents]
-      .sort((a, b) => new Date(b.dateOfRegistration) - new Date(a.dateOfRegistration))
-      .slice(0, 5);
-
-    return {
-      total: sampleStudents.length,
-      active,
-      inactive: sampleStudents.length - active,
-      departmentCount: departments.size,
-      byDepartment: countBy('department'),
-      byYear: countBy('year'),
-      recent,
+    return () => {
+      active = false;
     };
-  }, []);
+  }, [reloadToken]);
 
-  return { ...summary, isLoading };
+  const isCurrent = state.token === reloadToken;
+  const stats = isCurrent ? state.stats : null;
+  const loadError = isCurrent ? state.error : null;
+
+  return {
+    ...EMPTY,
+    ...(stats
+      ? {
+          total: stats.total,
+          active: stats.active,
+          inactive: stats.inactive,
+          departmentCount: stats.byDepartment?.length ?? 0,
+          byDepartment: (stats.byDepartment ?? []).map((row) => ({
+            label: row.department,
+            count: row.count,
+          })),
+          byYear: (stats.byYear ?? []).map((row) => ({ label: row.year, count: row.count })),
+          recent: stats.recentRegistrations ?? [],
+        }
+      : {}),
+    status: isCurrent ? state.status : 'loading',
+    error: loadError,
+    errorKind: loadError ? describeLoadError(loadError).kind : null,
+    isLoading: !isCurrent,
+    isError: isCurrent && state.status === 'error',
+    refresh,
+  };
 };

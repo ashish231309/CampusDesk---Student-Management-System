@@ -4,7 +4,6 @@ import { Menu, Plus } from 'lucide-react';
 import { UserMenu } from './UserMenu.jsx';
 import { IconButton } from '../ui/Button.jsx';
 import { buttonClasses } from '../ui/buttonStyles.js';
-import { SAMPLE_DATA_IN_USE } from '../../data/sampleStudents.js';
 import { navigationItems } from '../../config/navigation.js';
 import { paths } from '../../routes/paths.js';
 
@@ -33,15 +32,6 @@ export const Topbar = ({ onOpenNavigation }) => {
           </p>
           <h1 className="truncate text-[15px] leading-tight font-semibold text-ink">{section}</h1>
         </div>
-
-        {SAMPLE_DATA_IN_USE ? (
-          <span
-            title="The signed-in views still read the design fixture; live API data lands in a later stage."
-            className="hidden rounded-full border border-line bg-surface px-2.5 py-1 text-[11px] font-semibold text-muted sm:inline-flex"
-          >
-            Sample records
-          </span>
-        ) : null}
 
         <Link
           to={paths.newStudent}

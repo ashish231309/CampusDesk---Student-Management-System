@@ -20,12 +20,20 @@ export class ApiRequestError extends Error {
     return this.code === 'NETWORK_ERROR';
   }
 
-  get isNotImplemented() {
-    return this.status === 501;
-  }
-
   get isUnauthorized() {
     return this.status === 401;
+  }
+
+  get isForbidden() {
+    return this.status === 403;
+  }
+
+  get isNotFound() {
+    return this.status === 404;
+  }
+
+  get isValidationError() {
+    return this.status === 422;
   }
 }
 
@@ -143,7 +151,7 @@ const request = async (path, { method = 'GET', body, query, signal, timeout } = 
       );
     }
 
-    return payload?.data ?? null;
+    return { data: payload?.data ?? null, meta: payload?.meta ?? null };
   } catch (error) {
     if (error instanceof ApiRequestError) throw error;
 
@@ -163,12 +171,31 @@ const request = async (path, { method = 'GET', body, query, signal, timeout } = 
   }
 };
 
-export const api = {
+/**
+ * `apiRequest` keeps the whole success envelope — `{ data, meta }`. Collection
+ * endpoints put pagination in `meta`, so anything that pages through results
+ * needs this; everything else uses the `api` helpers below, which unwrap
+ * `data` for convenience.
+ */
+export const apiRequest = {
   get: (path, options) => request(path, { ...options, method: 'GET' }),
   post: (path, body, options) => request(path, { ...options, method: 'POST', body }),
   patch: (path, body, options) => request(path, { ...options, method: 'PATCH', body }),
   put: (path, body, options) => request(path, { ...options, method: 'PUT', body }),
   delete: (path, options) => request(path, { ...options, method: 'DELETE' }),
+};
+
+const unwrap = (call) => async (path, bodyOrOptions, maybeOptions) => {
+  const result = await call(path, bodyOrOptions, maybeOptions);
+  return result.data;
+};
+
+export const api = {
+  get: unwrap(apiRequest.get),
+  post: unwrap(apiRequest.post),
+  patch: unwrap(apiRequest.patch),
+  put: unwrap(apiRequest.put),
+  delete: unwrap(apiRequest.delete),
 };
 
 /** Turn any thrown value into a message that is safe to show a user. */

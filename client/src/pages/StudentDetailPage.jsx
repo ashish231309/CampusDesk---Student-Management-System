@@ -22,9 +22,10 @@ import { Button } from '../components/ui/Button.jsx';
 import { buttonClasses } from '../components/ui/buttonStyles.js';
 import { Card } from '../components/ui/Card.jsx';
 import { ConfirmDialog } from '../components/ui/ConfirmDialog.jsx';
-import { EmptyState } from '../components/ui/States.jsx';
+import { EmptyState, ErrorState } from '../components/ui/States.jsx';
 import { Skeleton } from '../components/ui/Skeleton.jsx';
 import { useToast } from '../context/toastContext.js';
+import { errorMessage } from '../utils/apiErrors.js';
 import { useStudent } from '../hooks/useStudent.js';
 import { studentService } from '../services/studentService.js';
 import { formatDate, formatRelative } from '../utils/format.js';
@@ -47,7 +48,7 @@ export default function StudentDetailPage() {
   const { id } = useParams();
   const navigate = useNavigate();
   const toast = useToast();
-  const { student, status } = useStudent(id);
+  const { student, status, error, errorKind, refresh } = useStudent(id);
 
   const [isConfirmOpen, setIsConfirmOpen] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
@@ -58,15 +59,20 @@ export default function StudentDetailPage() {
       await studentService.remove(student.id);
       toast.success(`${student.name} was removed from the register.`, 'Student deleted');
       navigate(paths.students, { replace: true });
-    } catch (error) {
-      toast.error(error.message, 'Could not delete student');
+    } catch (deleteError) {
+      if (deleteError.isNotFound) {
+        toast.info('That student has already been removed.', 'Already deleted');
+        navigate(paths.students, { replace: true });
+      } else {
+        toast.error(errorMessage(deleteError), 'Could not delete student');
+      }
     } finally {
       setIsDeleting(false);
       setIsConfirmOpen(false);
     }
   };
 
-  if (status === 'not-found') {
+  if (status === 'missing') {
     return (
       <PageTransition>
         <PageHeader
@@ -83,6 +89,30 @@ export default function StudentDetailPage() {
                 Back to the register
               </Link>
             }
+          />
+        </Card>
+      </PageTransition>
+    );
+  }
+
+  // The record exists but could not be read — a permission problem, an outage
+  // or a lost connection is not the same thing as "no such student".
+  if (status === 'error') {
+    return (
+      <PageTransition>
+        <PageHeader
+          title="Student"
+          breadcrumbs={[{ label: 'Students', to: paths.students }, { label: 'Unavailable' }]}
+        />
+        <Card>
+          <ErrorState
+            title={
+              errorKind === 'forbidden'
+                ? 'You cannot view this student'
+                : 'This student could not be loaded'
+            }
+            description={errorMessage(error)}
+            onRetry={refresh}
           />
         </Card>
       </PageTransition>
