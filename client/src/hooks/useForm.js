@@ -50,6 +50,10 @@ export const useForm = ({ initialValues, schema = {}, onSubmit }) => {
     (event) => {
       event?.preventDefault?.();
 
+      // Guard against a second submit while one is in flight: a double-click or
+      // an Enter keypress must not create the same student twice.
+      if (isSubmitting) return undefined;
+
       const validationErrors = validateAll();
       setTouched(Object.fromEntries(Object.keys(schema).map((field) => [field, true])));
       setErrors(validationErrors);
@@ -66,7 +70,7 @@ export const useForm = ({ initialValues, schema = {}, onSubmit }) => {
         })
         .finally(() => setIsSubmitting(false));
     },
-    [onSubmit, schema, validateAll, values],
+    [isSubmitting, onSubmit, schema, validateAll, values],
   );
 
   const isValid = useMemo(() => !hasErrors(validateAll()), [validateAll]);

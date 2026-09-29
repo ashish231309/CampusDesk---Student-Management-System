@@ -15,6 +15,21 @@ const cleanQuery = (query) =>
     Object.entries(query).filter(([, value]) => value !== '' && value !== undefined && value !== null),
   );
 
+/**
+ * Anything that changes the register announces itself here, so a screen that is
+ * already open (the dashboard's statistics, for instance) can refresh instead of
+ * showing numbers that no longer match the list. It is a plain listener set
+ * rather than a state library: the pages still fetch their own data.
+ */
+const changeListeners = new Set();
+
+export const onStudentsChanged = (listener) => {
+  changeListeners.add(listener);
+  return () => changeListeners.delete(listener);
+};
+
+const announceChange = () => changeListeners.forEach((listener) => listener());
+
 export const studentService = {
   /**
    * One page of the register. Returns the rows plus the API's pagination
@@ -42,11 +57,30 @@ export const studentService = {
   /** Dashboard totals, distributions and recent registrations. */
   stats: (options) => api.get('/students/stats', options).then((data) => data?.stats ?? null),
 
-  getById: (id, options) => api.get(`/students/${id}`, options).then((data) => data?.student ?? null),
+  /**
+   * Values for the filter controls. Courses and departments come back from the
+   * data itself, so a course entered yesterday is filterable today.
+   */
+  filters: (options) => api.get('/students/filters', options).then((data) => data?.options ?? null),
 
-  create: (payload) => api.post('/students', payload).then((data) => data?.student ?? null),
+  getById: (id, options) =>
+    api.get(`/students/${id}`, options).then((data) => data?.student ?? null),
 
-  update: (id, payload) => api.patch(`/students/${id}`, payload).then((data) => data?.student ?? null),
+  create: (payload) =>
+    api.post('/students', payload).then((data) => {
+      announceChange();
+      return data?.student ?? null;
+    }),
 
-  remove: (id) => api.delete(`/students/${id}`),
+  update: (id, payload) =>
+    api.patch(`/students/${id}`, payload).then((data) => {
+      announceChange();
+      return data?.student ?? null;
+    }),
+
+  remove: (id) =>
+    api.delete(`/students/${id}`).then((data) => {
+      announceChange();
+      return data;
+    }),
 };

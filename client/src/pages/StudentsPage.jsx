@@ -1,6 +1,6 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
-import { Eye, Filter, Pencil, SlidersHorizontal, Trash2, UserPlus, Users } from 'lucide-react';
+import { Eye, Pencil, SlidersHorizontal, Trash2, UserPlus, Users, X } from 'lucide-react';
 
 import { PageHeader } from '../components/layout/PageHeader.jsx';
 import { PageTransition } from '../components/motion/PageTransition.jsx';
@@ -9,6 +9,7 @@ import { StatusPill } from '../components/ui/Badge.jsx';
 import { Button, IconButton } from '../components/ui/Button.jsx';
 import { buttonClasses } from '../components/ui/buttonStyles.js';
 import { Card } from '../components/ui/Card.jsx';
+import { Badge } from '../components/ui/Badge.jsx';
 import { ConfirmDialog } from '../components/ui/ConfirmDialog.jsx';
 import { DataTable } from '../components/ui/DataTable.jsx';
 import { SearchInput } from '../components/ui/SearchInput.jsx';
@@ -19,64 +20,99 @@ import { useToast } from '../context/toastContext.js';
 import { errorMessage } from '../utils/apiErrors.js';
 import { useDebouncedValue } from '../hooks/useDebouncedValue.js';
 import { useStudentList } from '../hooks/useStudentList.js';
+import { useStudentFilters } from '../hooks/useStudentFilters.js';
 import { studentService } from '../services/studentService.js';
 import {
-  COURSE_SUGGESTIONS,
-  DEPARTMENTS,
+  DEFAULT_SORT,
   ENROLLMENT_STATUSES,
   PAGE_SIZE,
+  PAGE_SIZE_OPTIONS,
   SORT_OPTIONS,
-  STUDENT_YEARS,
 } from '../constants/student.js';
+import {
+  describeActiveFilters,
+  hasActiveListParams,
+  hasInvalidListParams,
+  readStudentListQuery,
+  writeStudentListQuery,
+} from '../utils/studentQuery.js';
 import { formatDate } from '../utils/format.js';
 import { paths } from '../routes/paths.js';
 
 export default function StudentsPage() {
   const toast = useToast();
 
-  // Filters live in the URL so a filtered register can be shared or reloaded.
+  /**
+   * The URL is the register's state: search, filters, sort, page and page size
+   * all live there, so a link can be shared, a reload restores exactly what was
+   * on screen, and back/forward moves through the user's own trail. Reading it
+   * is defensive — an out-of-date or hand-edited link cannot push a value past
+   * the API's validators.
+   */
   const [searchParams, setSearchParams] = useSearchParams();
-  const [searchTerm, setSearchTerm] = useState(searchParams.get('search') ?? '');
+  const query = readStudentListQuery(searchParams);
+
+  // The input keeps its own value while typing; the URL catches up once the
+  // debounce settles, which is what stops a keystroke becoming a request.
+  const [searchTerm, setSearchTerm] = useState(query.search);
   const debouncedSearch = useDebouncedValue(searchTerm, 320);
 
   const [deleteTarget, setDeleteTarget] = useState(null);
   const [isDeleting, setIsDeleting] = useState(false);
 
-  const filters = {
-    search: debouncedSearch,
-    status: searchParams.get('status') ?? '',
-    year: searchParams.get('year') ?? '',
-    department: searchParams.get('department') ?? '',
-    course: searchParams.get('course') ?? '',
-    sort: searchParams.get('sort') ?? SORT_OPTIONS[0].value,
-    page: Number(searchParams.get('page') ?? 1),
-    limit: PAGE_SIZE,
-  };
+  const filters = { ...query, search: debouncedSearch };
+  const { items, meta, status, error, errorKind, isLoading, refresh } = useStudentList(filters);
+  const options = useStudentFilters();
 
-  const { items, meta, status, error, errorKind, isFiltered, isLoading, refresh } =
-    useStudentList(filters);
+  /**
+   * Replace the whole register state. Page resets to 1 unless the caller says
+   * otherwise, so narrowing a search never strands the user on page 4 of a
+   * two-page result.
+   */
+  const applyQuery = useCallback(
+    (patch) => {
+      const next = { ...query, ...patch };
+      if (patch.page === undefined) next.page = 1;
+      setSearchParams(writeStudentListQuery(next), { replace: true });
+    },
+    [query, setSearchParams],
+  );
 
-  const updateFilter = (patch) => {
-    const next = new URLSearchParams(searchParams);
-    Object.entries({ ...patch, page: patch.page ?? 1 }).forEach(([key, value]) => {
-      if (value === '' || value === undefined || value === null) next.delete(key);
-      else next.set(key, value);
-    });
-    setSearchParams(next, { replace: true });
-  };
+  const updateFilter = (patch) => applyQuery(patch);
+
+  const clearFilters = useCallback(() => {
+    setSearchTerm('');
+    setSearchParams(new URLSearchParams(), { replace: true });
+  }, [setSearchParams]);
+
+  // Drop anything the API would reject, so an invalid link self-corrects
+  // instead of failing the request.
+  useEffect(() => {
+    if (hasInvalidListParams(searchParams)) {
+      setSearchParams(writeStudentListQuery(readStudentListQuery(searchParams)), { replace: true });
+    }
+  }, [searchParams, setSearchParams]);
 
   // Keep the URL's search parameter in step with the debounced input.
   useEffect(() => {
     const current = searchParams.get('search') ?? '';
     if (current === debouncedSearch) return;
-    updateFilter({ search: debouncedSearch });
+    applyQuery({ search: debouncedSearch });
     // eslint-disable-next-line react-hooks/exhaustive-deps -- only the debounced term should retrigger this
   }, [debouncedSearch]);
 
-  const clearFilters = () => {
-    setSearchTerm('');
-    setSearchParams(new URLSearchParams(), { replace: true });
-  };
+  /**
+   * A delete can empty the page the user is standing on. The API is the
+   * authority on how many pages remain, so once the refreshed page arrives and
+   * the current one no longer exists, step back to the last real page rather
+   * than showing an empty register that is not empty.
+   */
+  useEffect(() => {
+    if (status !== 'ready' || !meta) return;
+    if (query.page > meta.totalPages) {
+      applyQuery({ page: meta.totalPages });
+    }
+  }, [applyQuery, meta, query.page, status]);
 
   const handleDelete = async () => {
     if (!deleteTarget) return;
@@ -101,6 +137,9 @@ export default function StudentsPage() {
       setIsDeleting(false);
     }
   };
+
+  const activeFilters = describeActiveFilters(filters);
+  const isFiltered = hasActiveListParams(filters);
 
   const columns = [
     {
@@ -239,7 +278,7 @@ export default function StudentsPage() {
               className="h-10 w-full text-[13px] sm:w-[140px]"
             >
               <option value="">All years</option>
-              {STUDENT_YEARS.map((year) => (
+              {options.years.map((year) => (
                 <option key={year} value={year}>
                   {year}
                 </option>
@@ -253,7 +292,7 @@ export default function StudentsPage() {
               className="h-10 w-full text-[13px] sm:w-[180px]"
             >
               <option value="">All departments</option>
-              {DEPARTMENTS.map((department) => (
+              {options.departments.map((department) => (
                 <option key={department} value={department}>
                   {department}
                 </option>
@@ -267,7 +306,7 @@ export default function StudentsPage() {
               className="h-10 w-full text-[13px] sm:w-[200px]"
             >
               <option value="">All courses</option>
-              {COURSE_SUGGESTIONS.map((course) => (
+              {options.courses.map((course) => (
                 <option key={course} value={course}>
                   {course}
                 </option>
@@ -287,13 +326,51 @@ export default function StudentsPage() {
               ))}
             </Select>
 
-            {isFiltered ? (
-              <Button variant="ghost" size="sm" icon={Filter} onClick={clearFilters}>
-                Clear
-              </Button>
-            ) : null}
+            <Select
+              aria-label="Rows per page"
+              value={String(query.limit)}
+              onChange={(event) => updateFilter({ limit: Number(event.target.value) })}
+              className="h-10 w-full text-[13px] sm:w-[130px]"
+            >
+              {PAGE_SIZE_OPTIONS.map((size) => (
+                <option key={size} value={size}>
+                  {size} per page
+                </option>
+              ))}
+            </Select>
           </div>
         </div>
+
+        {/* What is currently narrowing the register, and a way to lift each one. */}
+        {activeFilters.length > 0 ? (
+          <div className="flex flex-wrap items-center gap-2 border-b border-line/60 bg-canvas/40 px-5 py-3">
+            <span className="text-[12px] font-semibold tracking-wide text-muted uppercase">
+              Filtering by
+            </span>
+
+            {activeFilters.map((filter) => (
+              <Badge key={filter.key} tone="neutral" className="gap-2 normal-case">
+                {filter.label}
+                <button
+                  type="button"
+                  onClick={() =>
+                    filter.key === 'search'
+                      ? (setSearchTerm(''), updateFilter({ search: '' }))
+                      : updateFilter({ [filter.key]: filter.key === 'sort' ? DEFAULT_SORT : '' })
+                  }
+                  aria-label={`Remove filter: ${filter.label}`}
+                  className="focus-ring -mr-1 grid size-4 place-items-center rounded-full text-charcoal/70 transition-colors hover:bg-charcoal/10 hover:text-charcoal"
+                >
+                  <X className="size-3" aria-hidden="true" />
+                </button>
+              </Badge>
+            ))}
+
+            <Button variant="ghost" size="sm" onClick={clearFilters} className="ml-auto">
+              Clear all
+            </Button>
+          </div>
+        ) : null}
 
         {status === 'error' ? (
           <ErrorState
@@ -305,7 +382,7 @@ export default function StudentsPage() {
           <>
             <DataTable
               isLoading={isLoading}
-              skeletonRows={PAGE_SIZE}
+              skeletonRows={Math.min(query.limit, PAGE_SIZE)}
               rows={items}
               columns={columns}
               getRowKey={(student) => student.id}

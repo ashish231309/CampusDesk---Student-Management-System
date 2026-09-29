@@ -169,6 +169,7 @@ All routes live under `/api` and answer with the same envelope:
 | `GET` | `/api/auth/me` | returns the signed-in user (requires a token) |
 | `GET` | `/api/students` | search, filter, sort, paginate (guarded) |
 | `GET` | `/api/students/stats` | dashboard counts (guarded) |
+| `GET` | `/api/students/filters` | course and department values in use, for the filter controls (guarded) |
 | `POST` | `/api/students` | create — the student ID is generated server-side (guarded) |
 | `GET` | `/api/students/:id` | one student (guarded) |
 | `PATCH` | `/api/students/:id` | update (guarded) |
@@ -193,9 +194,25 @@ carrying an expired, malformed or wrongly-signed token gets the usual `401` enve
 
 The student area requires that token; without one every student endpoint answers `401`.
 
-List queries combine: `?search=`, `?status=`, `?year=`, `?department=`, `?course=`, `?sort=`,
-`?order=`, `?page=` and `?limit=` — for example
-`/api/students?department=Computer%20Science&year=2nd%20Year&status=active&sort=name&order=asc`.
+### The register
+
+`GET /api/students` takes `?search=`, `?status=`, `?year=`, `?department=`, `?course=`, `?sort=`,
+`?order=`, `?page=` and `?limit=` (1–100), and they combine freely — for example
+`/api/students?department=Computer%20Science&year=2nd%20Year&status=active&sort=name&page=2&limit=25`.
+The response carries pagination metadata in `meta` (`page`, `limit`, `total`, `totalPages`,
+`hasNextPage`, `hasPreviousPage`, `sort`), so a client never counts rows itself.
+
+**Search** is case-insensitive substring matching across name, student ID, email, phone, course and
+department. It is split on spaces and **every word must match something, though not necessarily the
+same field** — so `ashish kumar` finds a student whose name is recorded in either order, and
+`cse 2026` can match a department in one term and a student ID in the other. Digits are matched
+loosely against the stored phone number, so `9822012345`, `98220 12345` and `+91 98220 12345` all
+find the same record. Input is regex-escaped, capped at 120 characters and at six terms, and no
+field outside the list above is ever searched.
+
+The register's URL is its state: `search`, `status`, `year`, `department`, `course`, `sort`, `page`
+and `limit` live in the address, so a filtered register can be shared or reloaded, and outdated or
+hand-edited values are quietly dropped rather than sent to the API.
 
 ```bash
 curl http://localhost:5000/api/health

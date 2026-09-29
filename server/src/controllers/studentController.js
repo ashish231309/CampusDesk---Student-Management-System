@@ -3,6 +3,7 @@ import {
   createStudent,
   deleteStudent,
   getStudentById,
+  getStudentFilterOptions,
   getStudentStats,
   listStudents,
   updateStudent,
@@ -31,6 +32,12 @@ export const getStudents = async (req, res) => {
 export const getStats = async (_req, res) => {
   const stats = await getStudentStats();
   return sendSuccess(res, { stats });
+};
+
+/** GET /api/students/filters — values the register's filter controls can offer. */
+export const getFilters = async (_req, res) => {
+  const options = await getStudentFilterOptions();
+  return sendSuccess(res, { options });
 };
 
 /** GET /api/students/:id */

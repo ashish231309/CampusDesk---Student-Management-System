@@ -35,6 +35,15 @@ export class ApiRequestError extends Error {
   get isValidationError() {
     return this.status === 422;
   }
+
+  /**
+   * The caller withdrew the request — a superseded search, a page that moved on
+   * or a component that unmounted. It is not a failure, and nothing should tell
+   * the user about it.
+   */
+  get isCancelled() {
+    return this.code === 'CANCELLED';
+  }
 }
 
 /**
@@ -117,6 +126,12 @@ const request = async (path, { method = 'GET', body, query, signal, timeout } = 
   }
 
   const controller = new AbortController();
+  // A caller's signal may already be aborted (the request became obsolete before
+  // it started), in which case the fetch must not be attempted at all.
+  if (signal?.aborted) {
+    throw new ApiRequestError('The request was superseded before it was sent.', { code: 'CANCELLED' });
+  }
+
   const abortTimer = setTimeout(() => controller.abort(), timeout ?? appConfig.apiTimeoutMs);
   const abortFromCaller = () => controller.abort();
   signal?.addEventListener('abort', abortFromCaller);
@@ -156,6 +171,12 @@ const request = async (path, { method = 'GET', body, query, signal, timeout } = 
     if (error instanceof ApiRequestError) throw error;
 
     if (error?.name === 'AbortError') {
+      // Distinguish "the caller moved on" from "the server never answered":
+      // only the second one is worth showing anybody.
+      if (signal?.aborted) {
+        throw new ApiRequestError('The request was superseded by a newer one.', { code: 'CANCELLED' });
+      }
+
       throw new ApiRequestError('The request took too long and was cancelled.', {
         code: 'TIMEOUT',
       });

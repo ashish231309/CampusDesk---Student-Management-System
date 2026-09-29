@@ -538,6 +538,68 @@ await check('search matches a phone number typed without separators', async () =
   );
 });
 
+await check('a multi-term search finds records across fields', async () => {
+  // "Meera Krishnan" is stored as two words in `name`; "physics meera" splits a
+  // name and a course across the two terms.
+  const byName = await search('search=Meera%20Krishnan');
+  assert(byName.data.students.some((student) => student.id === searchable.id), 'two name words should match');
+
+  const reversed = await search('search=Krishnan%20Meera');
+  assert(reversed.data.students.some((student) => student.id === searchable.id), 'term order should not matter');
+
+  const acrossFields = await search('search=Meera%20physics');
+  assert(
+    acrossFields.data.students.some((student) => student.id === searchable.id),
+    'terms should be allowed to match different fields',
+  );
+
+  const miss = await search('search=Meera%20Chemistry');
+  assert(miss.data.students.length === 0, 'every term must match something');
+});
+
+await check('the filter options describe what is actually stored', async () => {
+  const response = await request('GET', '/api/students/filters');
+
+  assert(response.status === 200, `expected 200, received ${response.status}`);
+
+  const options = response.body.data.options;
+  assert(options.courses.includes(searchable.course), 'an entered course should be offered as a filter');
+  assert(options.departments.includes(searchable.department), 'an entered department should be offered');
+  assert(new Set(options.courses).size === options.courses.length, 'options should not repeat');
+  assert(!options.courses.includes(''), 'blank options should be dropped');
+});
+
+await check('deleting the last record on a page steps back instead of stranding the user', async () => {
+  // Two students, a page size of one: page 2 exists, and deleting its only
+  // record must leave page 1 as the last real page.
+  const disposable = await createStudent();
+
+  // The shared `search` helper appends its own limit, so this check builds the
+  // URL directly to control the page size.
+  const paged = async (query) => {
+    const response = await request('GET', `/api/students?${query}`);
+    assert(response.status === 200, `\`${query}\` returned ${response.status}`);
+    return response.body;
+  };
+
+  const before = await paged('page=2&limit=1&sort=name');
+  assert(before.data.meta.total >= 2, 'the fixture should hold more than one page of records');
+
+  const removed = await request('DELETE', `/api/students/${disposable.id}`);
+  assert(removed.status === 200, `expected 200, received ${removed.status}`);
+
+  const after = await paged('page=1&limit=1&sort=name');
+  assert(after.data.meta.page === 1, 'the first page should still be available');
+  assert(after.data.meta.totalPages >= 1, 'the API should report at least one page');
+
+  // A page beyond the end is an empty list with honest metadata, not an error —
+  // the client uses that metadata to step back to the last real page.
+  const beyond = await paged('page=99&limit=1');
+  assert(beyond.status === 200, `expected 200 for a page beyond the end, received ${beyond.status}`);
+  assert(beyond.data.students.length === 0, 'a page beyond the end should be empty');
+  assert(beyond.data.meta.page === 99, 'the API should echo the page it was asked for');
+});
+
 await check('search treats regular-expression input literally', async () => {
   const wildcard = await search('search=.%2A');
   assert(wildcard.data.students.length === 0, 'a wildcard must not match every record');

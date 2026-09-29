@@ -27,9 +27,10 @@ export const useStudent = (id) => {
     if (key === null) return undefined;
 
     let active = true;
+    const controller = new AbortController();
 
     studentService
-      .getById(key)
+      .getById(key, { signal: controller.signal })
       .then((student) => {
         if (!active) return;
         setResolved(
@@ -39,7 +40,7 @@ export const useStudent = (id) => {
         );
       })
       .catch((error) => {
-        if (!active) return;
+        if (!active || error.isCancelled) return;
         const { kind } = describeLoadError(error);
         setResolved({
           key,
@@ -51,6 +52,7 @@ export const useStudent = (id) => {
 
     return () => {
       active = false;
+      controller.abort();
     };
   }, [key, reloadToken]);
 

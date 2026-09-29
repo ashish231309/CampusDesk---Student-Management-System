@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { studentService } from '../services/studentService.js';
+import { onStudentsChanged, studentService } from '../services/studentService.js';
 import { describeLoadError } from '../utils/apiErrors.js';
 import { PAGE_SIZE } from '../constants/student.js';
 
@@ -13,7 +13,12 @@ import { PAGE_SIZE } from '../constants/student.js';
  * unmatched key simply reads as "loading".
  *
  * `refresh` re-runs the current query, which is what keeps a delete or an edit
- * from leaving a stale row behind.
+ * from leaving a stale row behind, and it is also wired to the service's own
+ * "the register changed" announcement so an edit made on another screen cannot
+ * leave this list out of date.
+ *
+ * Superseded requests are aborted as well as ignored: a fast typist produces
+ * several, and only the newest one should occupy the network.
  */
 export const useStudentList = (query = {}) => {
   const { search, status, year, department, course, sort, order, page = 1, limit = PAGE_SIZE } = query;
@@ -31,24 +36,30 @@ export const useStudentList = (query = {}) => {
 
   useEffect(() => {
     let active = true;
+    const controller = new AbortController();
 
     studentService
-      .list(filter)
+      .list(filter, { signal: controller.signal })
       .then(({ students, meta }) => {
         if (active) {
           setResult({ key: requestKey, status: 'ready', students, meta, error: null });
         }
       })
       .catch((error) => {
-        if (active) {
+        // A cancelled request says nothing about the data — the next one is
+        // already on its way.
+        if (active && !error.isCancelled) {
           setResult({ key: requestKey, status: 'error', students: [], meta: null, error });
         }
       });
 
     return () => {
       active = false;
+      controller.abort();
     };
   }, [filter, requestKey, reloadToken]);
+
+  useEffect(() => onStudentsChanged(refresh), [refresh]);
 
   const isCurrent = result.key === requestKey;
 

@@ -71,4 +71,25 @@ Still to come: the signed-in student screens still read the design fixture in
 Still to come: the visual and interaction polish (dashboard and student screens) of the
 later stages, and database-backed verification wherever MongoDB is available.
 
-## Stage 05 — Search, filtering & student operations  ⏳
+## Stage 05 — Search, filtering & student operations  ✅
+
+- Search now splits on spaces and requires every word to match something —
+  "ashish kumar" finds the student whatever order the name is stored in, and
+  "cse 2026" can match a department and a student ID in one query. Still escaped,
+  still capped at 120 characters, now also capped at six terms
+- New protected `GET /api/students/filters` returns the courses and departments
+  actually in use, so the filter controls follow the data rather than a list that
+  goes stale; case-insensitive duplicates collapse
+- The register's URL is its state (search, filters, sort, page, page size), read
+  defensively — an out-of-date link cannot push an invalid value at the API
+- Active filters appear as removable chips with a "Clear all" action; page size
+  is selectable (10/25/50/100, all inside the API's limit)
+- Superseded requests are aborted, not just ignored, and a cancelled request is
+  never reported as a failure; the dashboard refreshes itself when students change
+- Deleting the last record on a page steps back to the last real page instead of
+  leaving an empty register on screen; a double submit cannot create two students
+- `npm run verify` grew to 116 checks (search rules, filter options, URL state,
+  page size, cancellation, stale-response protection); `npm run verify:db` gained
+  multi-term, options and last-page-delete checks
+
+## Stage 06 — Frontend foundation & routing  ⏳

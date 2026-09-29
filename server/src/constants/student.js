@@ -75,3 +75,14 @@ export const MAX_PAGE_SIZE = 100;
 
 /** Free-text search is capped so a query cannot be used as a DoS vector. */
 export const MAX_SEARCH_LENGTH = 120;
+
+/**
+ * A search is split on whitespace and every term must match something, so
+ * "ashish kumar" can find a student whose first name and surname live in one
+ * field. The term count is capped for the same reason as the length: each term
+ * adds an OR branch to the query.
+ */
+export const MAX_SEARCH_TERMS = 6;
+
+/** Values the register's filter controls can be populated from. */
+export const MAX_FILTER_OPTIONS = 100;

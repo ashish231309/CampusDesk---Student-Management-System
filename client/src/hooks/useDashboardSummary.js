@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
-import { studentService } from '../services/studentService.js';
+import { onStudentsChanged, studentService } from '../services/studentService.js';
 import { describeLoadError } from '../utils/apiErrors.js';
 
 const EMPTY = {
@@ -31,20 +31,28 @@ export const useDashboardSummary = () => {
 
   useEffect(() => {
     let active = true;
+    const controller = new AbortController();
 
     studentService
-      .stats()
+      .stats({ signal: controller.signal })
       .then((stats) => {
         if (active) setState({ token: reloadToken, status: 'ready', stats, error: null });
       })
       .catch((error) => {
-        if (active) setState({ token: reloadToken, status: 'error', stats: null, error });
+        if (active && !error.isCancelled) {
+          setState({ token: reloadToken, status: 'error', stats: null, error });
+        }
       });
 
     return () => {
       active = false;
+      controller.abort();
     };
   }, [reloadToken]);
+
+  // Creating, editing or deleting a student changes these numbers; the service
+  // announces that so the cards cannot drift from the register.
+  useEffect(() => onStudentsChanged(refresh), [refresh]);
 
   const isCurrent = state.token === reloadToken;
   const stats = isCurrent ? state.stats : null;

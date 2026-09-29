@@ -39,12 +39,24 @@ export const COURSE_SUGGESTIONS = [
   'BBA',
 ];
 
+/**
+ * Sorting options. Every value here is one the API accepts (see
+ * `SORTABLE_STUDENT_FIELDS` on the server) — the register never asks the API to
+ * sort on a field it does not recognise.
+ */
 export const SORT_OPTIONS = [
   { value: '-dateOfRegistration', label: 'Newest first' },
   { value: 'dateOfRegistration', label: 'Oldest first' },
   { value: 'name', label: 'Name A–Z' },
   { value: '-name', label: 'Name Z–A' },
-  { value: 'studentId', label: 'Student ID' },
+  { value: 'studentId', label: 'Student ID A–Z' },
+  { value: '-studentId', label: 'Student ID Z–A' },
+  { value: 'department', label: 'Department A–Z' },
+  { value: '-year', label: 'Year (final first)' },
 ];
 
-export const PAGE_SIZE = 8;
+export const DEFAULT_SORT = SORT_OPTIONS[0].value;
+
+/** Page sizes offered in the register. All within the API's 1–100 limit. */
+export const PAGE_SIZE_OPTIONS = [10, 25, 50, 100];
+export const PAGE_SIZE = PAGE_SIZE_OPTIONS[0];

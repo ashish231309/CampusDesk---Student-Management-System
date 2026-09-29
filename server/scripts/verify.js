@@ -27,6 +27,7 @@ const {
   escapeRegExp,
   resolvePagination,
   resolveSort,
+  splitSearchTerms,
 } = await import('../src/services/studentService.js');
 const { formatStudentId, generateStudentId } = await import('../src/utils/generateStudentId.js');
 const { Counter } = await import('../src/models/Counter.js');
@@ -185,6 +186,74 @@ await check('search handles a digits-only phone number', () => {
   assert(patterns[0].test('+91 98220 41182'), 'spaced phone number should match');
   assert(patterns[0].test('9822041182'), 'unspaced phone number should match');
   assert(buildPhonePatterns('an').length === 0, 'short terms should not build phone patterns');
+});
+
+await check('multiple search terms are matched independently', () => {
+  const query = buildStudentQuery({ search: 'ashish kumar' });
+
+  assert(!('$or' in query), 'a multi-term search should not collapse into one branch');
+  assert(Array.isArray(query.$and) && query.$and.length === 2, `expected two term branches, got ${query.$and?.length}`);
+
+  // Each term is its own OR group, so the terms may live in different fields:
+  // "Kumar, Ashish" in one field, or a name plus a department.
+  for (const group of query.$and) {
+    assert(Array.isArray(group.$or), 'each term should be an OR over the searchable fields');
+    const fields = group.$or.map((clause) => Object.keys(clause)[0]);
+    for (const field of ['name', 'studentId', 'email', 'course', 'department']) {
+      assert(fields.includes(field), `each term should search ${field}`);
+    }
+  }
+
+  const [first, second] = query.$and.map((group) => group.$or[0].name.source);
+  assert(first.includes('ashish') && second.includes('kumar'), `terms should be separate: ${first}, ${second}`);
+});
+
+await check('a term spanning two fields is found through the OR groups', () => {
+  const query = buildStudentQuery({ search: 'cse 2026' });
+  const [firstGroup, secondGroup] = query.$and;
+
+  // A department clause matching the first term and a student-ID clause
+  // matching the second are enough — the terms need not share a field.
+  assert(firstGroup.$or.some((clause) => clause.department?.test('CSE')), 'the department clause should match "cse"');
+  assert(secondGroup.$or.some((clause) => clause.studentId?.test('CDS-2026-0007')), 'the student ID clause should match "2026"');
+});
+
+await check('search terms are deduplicated and bounded', () => {
+  assert(splitSearchTerms('  ashish   kumar ').join(',') === 'ashish,kumar', 'whitespace should be normalised');
+  assert(splitSearchTerms('ashish ashish').length === 1, 'a repeated term should count once');
+  assert(splitSearchTerms('one two three four five six seven eight').length === 6, 'the term count should be capped');
+  assert(splitSearchTerms('').length === 0, 'an empty search should produce no terms');
+});
+
+await check('a multi-term search still escapes every term', () => {
+  const query = buildStudentQuery({ search: 'a+b c*d' });
+  const sources = query.$and.flatMap((group) => group.$or.map((clause) => Object.values(clause)[0].source));
+
+  assert(sources.some((source) => source.includes('\\+')), 'the first term should be escaped');
+  assert(sources.some((source) => source.includes('\\*')), 'the second term should be escaped');
+});
+
+await check('a term that looks like a phone number is matched loosely in any position', () => {
+  const single = buildStudentQuery({ search: '9822041182' });
+  assert(
+    single.$or.some((clause) => clause.phone instanceof RegExp),
+    'a phone-shaped term should add a phone clause',
+  );
+
+  const multi = buildStudentQuery({ search: 'kumar 9822041182' });
+  const phoneGroup = multi.$and.find((group) => group.$or.some((clause) => clause.phone));
+  assert(Boolean(phoneGroup), 'the phone clause should survive alongside a name term');
+  assert(
+    phoneGroup.$or.find((clause) => clause.phone).phone.test('+91 98220 41182'),
+    'the phone term should match the stored, spaced number',
+  );
+});
+
+await check('a search longer than the cap is truncated before it becomes a pattern', () => {
+  const query = buildStudentQuery({ search: 'x'.repeat(400) });
+  const source = query.$or[0].name.source;
+
+  assert(source.length <= 121, `the pattern should be bounded, got ${source.length}`);
 });
 
 await check('filters combine into one query', () => {
@@ -789,6 +858,53 @@ await check('search input reaches the query escaped', async () => {
 
   assert(Array.isArray(filter.$or), 'search should build an $or clause');
   assert(filter.$or[0].name.source.includes('\\+'), 'metacharacters must be escaped in the query');
+});
+
+await check('the filter options endpoint is protected and data-derived', async () => {
+  const unauthenticated = await stubRequest('GET', '/api/students/filters', { token: null });
+  assert(unauthenticated.status === 401, `expected 401 without a session, received ${unauthenticated.status}`);
+
+  const distinctCalls = [];
+  const response = await withModelStubs(
+    {
+      ...userStubs,
+      Student: {
+        distinct: async (field) => {
+          distinctCalls.push(field);
+          return field === 'course'
+            ? ['B.Tech Computer Science', 'BBA', 'B.Tech Computer Science', '']
+            : ['Computer Science', 'Business Administration'];
+        },
+      },
+    },
+    () => stubRequest('GET', '/api/students/filters'),
+  );
+
+  assert(response.status === 200, `expected 200, received ${response.status}`);
+
+  const options = response.body.data.options;
+  assert(distinctCalls.includes('course') && distinctCalls.includes('department'), 'the options should come from the data');
+  assert(options.courses.includes('BBA'), 'discovered courses should be offered');
+  assert(!options.courses.includes(''), 'blank values should be dropped');
+  assert(options.courses.length === 2, `duplicates should collapse, got ${JSON.stringify(options.courses)}`);
+  assert(options.departments.includes('Computer Science'), 'discovered departments should be offered');
+  assert(options.years.length > 0 && options.statuses.includes('active'), 'fixed vocabularies should be included');
+  assert(options.sortFields.includes('name'), 'the sortable fields should be advertised');
+  assert(JSON.stringify(options.courses) === JSON.stringify([...options.courses].sort()), 'options should be sorted');
+});
+
+await check('the filters route is not mistaken for a student id', async () => {
+  // If `filters` were parsed as an id the request would fail validation instead
+  // of reaching the options handler.
+  const response = await withModelStubs(
+    {
+      ...userStubs,
+      Student: { distinct: async () => [] },
+    },
+    () => stubRequest('GET', '/api/students/filters'),
+  );
+
+  assert(response.status === 200, `expected the options handler, received ${response.status}`);
 });
 
 await check('the stats endpoint shapes the dashboard payload', async () => {
@@ -1498,6 +1614,7 @@ const clientBundle = await bundleClient(
     studentService: 'services/studentService.js',
     apiClient: 'services/apiClient.js',
     apiErrors: 'utils/apiErrors.js',
+    studentQuery: 'utils/studentQuery.js',
   },
   { baseUrl: `${stubUrl}/api` },
 );
@@ -1764,6 +1881,190 @@ await check('a database outage reads as "unavailable", not as a missing record',
   assert(described.kind === 'unavailable', `expected an "unavailable" state, got ${described.kind}`);
   assert(/temporarily unavailable|database/i.test(described.message), `unexpected message: ${described.message}`);
   assert(!/MongoServerSelectionError|ECONNREFUSED|mongodb:\/\//i.test(errorMessage(failure)), 'internals must not reach the UI');
+});
+
+await check('the register URL is read defensively', () => {
+  const { readStudentListQuery } = clientBundle.loaded.studentQuery;
+
+  const clean = readStudentListQuery(
+    new URLSearchParams('search=ananya&status=active&year=3rd+Year&department=CSE&page=2&limit=25&sort=name'),
+  );
+  assert(clean.search === 'ananya' && clean.status === 'active', 'valid values should survive');
+  assert(clean.year === '3rd Year' && clean.department === 'CSE', 'encoded values should be decoded');
+  assert(clean.page === 2 && clean.limit === 25 && clean.sort === 'name', 'page, size and sort should survive');
+
+  // A hand-edited or stale link must not reach the API with nonsense in it.
+  const hostile = readStudentListQuery(
+    new URLSearchParams('year=9th+Year&status=pending&sort=passwordHash&page=abc&limit=100000'),
+  );
+  assert(hostile.year === '', 'an unsupported year should fall back to "any"');
+  assert(hostile.status === '', 'an unsupported status should fall back to "any"');
+  assert(hostile.sort === '-dateOfRegistration', 'an unknown sort should fall back to the default');
+  assert(hostile.page === 1, 'a non-numeric page should fall back to page 1');
+  assert(hostile.limit === 10, 'an out-of-range page size should fall back to the default');
+});
+
+await check('the register URL omits defaults and keeps what matters', () => {
+  const { readStudentListQuery, writeStudentListQuery, hasInvalidListParams } =
+    clientBundle.loaded.studentQuery;
+
+  const defaultState = writeStudentListQuery(readStudentListQuery(new URLSearchParams('')));
+  assert(defaultState.toString() === '', `a clean register should have a clean URL, got "${defaultState}"`);
+
+  const filtered = writeStudentListQuery({
+    search: 'ashish',
+    status: 'active',
+    department: 'CSE',
+    page: 2,
+    limit: 25,
+    sort: 'name',
+    year: '',
+    course: '',
+  });
+  assert(filtered.get('search') === 'ashish', 'the search should be persisted');
+  assert(filtered.get('page') === '2' && filtered.get('limit') === '25', 'page and size should be persisted');
+  assert(filtered.get('sort') === 'name', 'a non-default sort should be persisted');
+  assert(!filtered.has('year') && !filtered.has('course'), 'empty filters must not be emitted');
+
+  // A link that carries junk is recognised as needing a rewrite.
+  assert(hasInvalidListParams(new URLSearchParams('year=9th+Year')) === true, 'invalid state should be detected');
+  assert(hasInvalidListParams(new URLSearchParams('search=ananya&page=2')) === false, 'valid state should pass');
+});
+
+await check('active filters are described for the chips', () => {
+  const { describeActiveFilters, hasActiveListParams } = clientBundle.loaded.studentQuery;
+
+  const filters = describeActiveFilters({
+    search: 'ashish',
+    status: 'active',
+    year: '3rd Year',
+    department: 'CSE',
+    course: '',
+    sort: 'name',
+    page: 1,
+    limit: 10,
+  });
+
+  const keys = filters.map((filter) => filter.key);
+  assert(keys.includes('search') && keys.includes('status') && keys.includes('year'), 'the narrowing filters should be listed');
+  assert(keys.includes('sort'), 'a non-default sort should be listed');
+  assert(!keys.includes('course'), 'an unused filter should not be listed');
+  assert(hasActiveListParams({ search: '', sort: '-dateOfRegistration', page: 1, limit: 10 }) === false, 'defaults are not filters');
+  assert(hasActiveListParams({ search: 'x', sort: '-dateOfRegistration', page: 1, limit: 10 }) === true, 'a search is a filter');
+});
+
+await check('a multi-term search reaches the database query from the client', async () => {
+  authToken.set(adminToken);
+
+  const seen = await withListStubs((captured) =>
+    clientApi.list({ search: 'ashish kumar', page: 1 }).then(() => captured),
+  );
+
+  assert(Array.isArray(seen.filter.$and), 'two terms should produce two AND branches');
+  assert(seen.filter.$and.length === 2, `expected two branches, got ${seen.filter.$and?.length}`);
+  assert(!('$or' in seen.filter), 'the branches should replace the single-term OR');
+});
+
+await check('the page size and sort the user chose reach the API', async () => {
+  authToken.set(adminToken);
+
+  const { query, result } = await withListStubs(async (captured, chain) => {
+    const value = await clientApi.list({ page: 3, limit: 50, sort: 'name' });
+    return { query: chain, result: value };
+  });
+
+  assert(query.limited === 50, `the page size should reach the query, got ${query.limited}`);
+  assert(query.skipped === 100, `page 3 of 50 should skip 100, skipped ${query.skipped}`);
+  assert(query.sortCalls[0] === 'name', `the sort should reach the query, got ${query.sortCalls[0]}`);
+
+  // Metadata comes back from the API describing the request that was made.
+  assert(result.meta.limit === 50, `the API should report the page size it used, got ${result.meta.limit}`);
+  assert(result.meta.page === 3, `the API should report the page it was asked for, got ${result.meta.page}`);
+});
+
+await check('the filter options come from the API', async () => {
+  authToken.set(adminToken);
+
+  const options = await withModelStubs(
+    {
+      ...userStubs,
+      Student: {
+        distinct: async (field) =>
+          field === 'course' ? ['B.Tech Computer Science'] : ['Computer Science'],
+      },
+    },
+    () => clientApi.filters(),
+  );
+
+  assert(options.courses.includes('B.Tech Computer Science'), 'courses should come back to the client');
+  assert(options.departments.includes('Computer Science'), 'departments should come back to the client');
+  assert(options.years.includes('3rd Year'), 'the years vocabulary should accompany the options');
+});
+
+await check('a superseded request is cancelled, not reported as a failure', async () => {
+  authToken.set(adminToken);
+
+  const controller = new AbortController();
+  const request = clientApi.list({ search: 'ash' }, { signal: controller.signal });
+
+  // The user keeps typing: the first request is withdrawn before it lands.
+  controller.abort();
+
+  const outcome = await request.then(
+    (value) => ({ ok: true, value }),
+    (error) => ({ ok: false, error }),
+  );
+
+  assert(outcome.ok === false, 'the cancelled request should not resolve with rows');
+  assert(outcome.error.isCancelled === true, `expected a cancellation, got ${outcome.error.code}`);
+  assert(outcome.error.status === 0, 'a cancellation is not an HTTP failure');
+});
+
+await check('a cancellation is not mapped to a user-facing error', () => {
+  const { describeLoadError } = clientBundle.loaded.apiErrors;
+  const { ApiRequestError: ClientError } = clientBundle.loaded.apiClient;
+
+  const cancelled = new ClientError('superseded', { code: 'CANCELLED' });
+  assert(cancelled.isCancelled === true, 'the client should recognise its own cancellation');
+  // The mapping must never describe a withdrawn request as a failure state.
+  const described = describeLoadError(cancelled);
+  assert(['offline', 'error'].includes(described.kind), `unexpected kind: ${described.kind}`);
+});
+
+await check('a superseded filter change cannot overwrite newer rows', async () => {
+  authToken.set(adminToken);
+
+  // Two searches in flight; the first one finishes last, exactly as it would on
+  // a slow connection. The second response must be the one that survives.
+  const first = chainableQuery([fakeDocument({ name: 'Slow Result' })]);
+  const second = chainableQuery([fakeDocument({ name: 'Fresh Result' })]);
+  let call = 0;
+
+  const { second: fresh } = await withModelStubs(
+    {
+      ...userStubs,
+      Student: {
+        find: () => {
+          call += 1;
+          return call === 1 ? first : second;
+        },
+        countDocuments: async () => 1,
+      },
+    },
+    async () => {
+      const staleController = new AbortController();
+      const stale = clientApi
+        .list({ search: 'ash' }, { signal: staleController.signal })
+        .catch((error) => ({ cancelled: error.isCancelled }));
+      staleController.abort();
+
+      const fresh = await clientApi.list({ search: 'ashish' });
+      return { stale: await stale, second: fresh };
+    },
+  );
+
+  assert(fresh.students[0].name === 'Fresh Result', 'the newest response should be the one used');
+  assert(fresh.students[0].name !== 'Slow Result', 'the withdrawn request must not supply rows');
 });
 
 clientBundle.cleanup();

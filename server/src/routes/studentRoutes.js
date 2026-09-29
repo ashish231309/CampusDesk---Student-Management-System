@@ -1,5 +1,6 @@
 import { Router } from 'express';
 import {
+  getFilters,
   getStudent,
   getStats,
   getStudents,
@@ -26,8 +27,9 @@ router
   .get(listStudentRules, validate, getStudents)
   .post(createStudentRules, validate, postStudent);
 
-// Declared before /:id so `stats` is never read as a student id.
+// Declared before /:id so neither word is ever read as a student id.
 router.get('/stats', getStats);
+router.get('/filters', getFilters);
 
 router
   .route('/:id')
