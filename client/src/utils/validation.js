@@ -44,10 +44,10 @@ export const photoUrl = (message = 'Enter a link to the photo, or a path startin
 
 /**
  * A registration date cannot be in the future — nobody is registered tomorrow.
- * The API accepts any valid date, so this is the one place the client is
- * deliberately stricter: it stops an obvious mistake at the field rather than
- * storing a record that will look wrong for a year. The date input's own `max`
- * is a hint, not a guarantee, because a typed value still gets through.
+ * The API enforces the same rule, and this is the first of the two: it stops an
+ * obvious mistake at the field rather than spending a round trip on it. The date
+ * input's own `max` is a hint, not a guarantee, because a typed value still gets
+ * through — which is why the check is here as well as on the server.
  */
 export const notFutureDate = (message = 'Choose a date that has already happened.') => (value) => {
   if (!value) return undefined;

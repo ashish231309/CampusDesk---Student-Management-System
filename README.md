@@ -9,8 +9,8 @@ share one repository and one set of scripts at the root.
 > **Build status:** the application works end to end — project structure, design system, API
 > layering, database models, validation, security middleware, registration and sign-in, and the
 > student register itself: listing, search, filters, sorting, paging, creation, editing, deletion and
-> dashboard statistics all read and write through the API. What remains is presentation work:
-> the visual and interaction polish of the later stages.
+> dashboard statistics all read and write through the API. The offline verification suite, the client
+> build and ESLint pass on a clean checkout.
 
 ---
 
@@ -325,10 +325,6 @@ rather than reporting a pass it did not earn.
    `JWT_SECRET`).
 3. Point the client at the API with `VITE_API_BASE_URL` and add the client's origin to
    `CLIENT_ORIGIN`.
-
-## Screenshots
-
-To be added once the authenticated flows are complete.
 
 ## License
 

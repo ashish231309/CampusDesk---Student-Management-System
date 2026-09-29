@@ -73,11 +73,18 @@ export const StudentTable = ({
           className="group flex items-center gap-3 rounded transition-colors"
         >
           <Avatar name={student.name} size="sm" />
+          {/* A long name or ID is shortened to keep the row on one line, so the
+              full value is still available on hover and to anyone who zooms. */}
           <span className="min-w-0">
-            <span className="block truncate text-body font-semibold text-ink group-hover:underline group-hover:underline-offset-4">
+            <span
+              className="block truncate text-body font-semibold text-ink group-hover:underline group-hover:underline-offset-4"
+              title={student.name}
+            >
               {student.name}
             </span>
-            <span className="block truncate text-meta text-muted">{student.studentId}</span>
+            <span className="block truncate text-meta text-muted" title={student.studentId}>
+              {student.studentId}
+            </span>
           </span>
         </Link>
       ),
@@ -87,10 +94,12 @@ export const StudentTable = ({
       header: 'Course',
       render: (student) => (
         <span className="block max-w-[15rem]">
-          <span className="block truncate text-label font-medium text-charcoal">
+          <span className="block truncate text-label font-medium text-charcoal" title={student.course}>
             {student.course}
           </span>
-          <span className="block truncate text-meta text-muted">{student.department}</span>
+          <span className="block truncate text-meta text-muted" title={student.department}>
+            {student.department}
+          </span>
         </span>
       ),
     },
@@ -159,6 +168,7 @@ export const StudentTable = ({
                 to={paths.student(student.id)}
                 state={{ registerFrom }}
                 className="block truncate text-subheading font-semibold text-ink"
+                title={student.name}
               >
                 {student.name}
               </Link>
@@ -171,19 +181,22 @@ export const StudentTable = ({
           <dl className="mt-3.5 grid grid-cols-2 gap-x-3 gap-y-2.5">
             <div className="min-w-0">
               <dt className="eyebrow">Course</dt>
-              <dd className="mt-0.5 truncate text-label font-medium text-charcoal">
+              <dd className="mt-0.5 truncate text-label font-medium text-charcoal" title={student.course}>
                 {student.course}
               </dd>
             </div>
             <div className="min-w-0">
               <dt className="eyebrow">Year</dt>
-              <dd className="mt-0.5 truncate text-label font-medium text-charcoal">
+              <dd className="mt-0.5 truncate text-label font-medium text-charcoal" title={student.year}>
                 {student.year}
               </dd>
             </div>
             <div className="min-w-0">
               <dt className="eyebrow">Department</dt>
-              <dd className="mt-0.5 truncate text-label font-medium text-charcoal">
+              <dd
+                className="mt-0.5 truncate text-label font-medium text-charcoal"
+                title={student.department}
+              >
                 {student.department}
               </dd>
             </div>

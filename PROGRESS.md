@@ -253,3 +253,60 @@ later stages, and database-backed verification wherever MongoDB is available.
   that stays pressable, an unreverted GSAP context) were each caught, and the
   suite returned to 178/178 after they were removed
 
+## Stage 11 — Testing, security, responsiveness & final polish  ✅
+
+- The whole repository was audited for leftover scaffolding, dead ends and unsafe handling:
+  no TODO/FIXME/HACK/DEBUG/debugger markers, no commented-out production code, no placeholder
+  or preview data, no preview authentication, no hard-coded credentials and no committed
+  secrets; the only `console.log` calls left in the tree are inside the verification tooling
+  and the only application `console` call is an error-boundary report gated to development
+- Three real defects were found and fixed on the server, all of them reachable by anyone
+  holding a session: a future `dateOfRegistration` was refused by the form but accepted by the
+  API, a repeated list parameter (`?department=a&department=b`) crashed the query builder and
+  answered 500, and an out-of-range `page` produced a skip of `1e+21` that the driver could not
+  represent
+- A registration date in the future is now refused by validation itself (422, field-level),
+  on create and on update alike, while a real date — including a corrected past one — is still
+  accepted and still reaches the model as a `Date`
+- Every list parameter is now a single value: `search`, `status`, `year`, `department`,
+  `course`, `sort`, `order`, `page` and `limit` are each validated as one string, so a repeated
+  parameter is refused with the same 422 as any other invalid value instead of becoming an
+  array; the query builder also refuses to build a clause from a value that is not a string, so
+  a caller that bypasses the route cannot smuggle a shape into MongoDB either
+- Pagination is bounded: `MAX_SKIP` caps how far the register can be scrolled, an impossible
+  page is answered as an empty page and the metadata reports the page actually read, so no
+  request can ask the driver for an unbounded skip
+- Truncation now keeps its meaning: every value the register shortens — name, student ID,
+  course, department, year, on the table, the mobile card and the detail header — carries its
+  full text on the element, and the dashboard's distribution rows do the same, so a long name
+  is shortened rather than lost on a small screen
+- The landing page stopped advertising a page size the register never had: the example panel
+  reads the register's own `PAGE_SIZE`/`PAGE_SIZE_OPTIONS` constants, and the README no longer
+  repeats the stale figure
+- `npm run verify` grew to 188 checks with ten genuine Stage 11 checks, not count-padding:
+  every list parameter being a single value, hostile parameter shapes never reaching the
+  query engine, the page bound held over HTTP, the future-date rule on create and update,
+  no committed secret reaching the browser bundle, the create/update allowlist end to end,
+  password material appearing in no auth response, the client's list vocabulary matching the
+  API's exactly, truncated values keeping their full text, and the marketing copy matching the
+  register's real constants
+- Nine deliberate regressions were injected one at a time to prove the suite still has teeth —
+  the student routes' session requirement removed, an unlisted field added to the sort
+  allowlist, the password hash left in the serialized account, the update validator's
+  managed-field refusal removed, a token-shaped literal committed to client source, an
+  accessible name removed from a control, a truncated value stripped of its full text, a
+  loading button left pressable, and a forbidden 700ms transition reintroduced. Each was
+  caught by a named check (180/188, 186/188, 183/188, 187/188, 187/188, 186/188, 187/188,
+  186/188 and 186/188 respectively), every file was restored byte-identically, and the suite
+  returned to 188/188
+- Gates: `npm run lint` clean, `npm run build` ✓ 786ms (`index-CCLbFGT9.js` 431.52 kB /
+  138.09 kB gzipped), `npm run verify` 188/188, `npm audit` 0 vulnerabilities,
+  `npm outdated` empty, and the built bundle carries no server-only module; `npm run verify:db`
+  is still BLOCKED in this environment — `mongodb-memory-server` cannot download MongoDB
+  (`fastdl.mongodb.org` unreachable) and no local instance exists, so its 50 checks were not
+  run and are not reported as passing
+- No dependency, library or architecture changed: the register's query state, the dashboard's
+  single stats source, the design system and the Stage 10 motion work are untouched, and
+  `package.json` and both lockfiles are identical to Stage 10. Browser verification remains
+  unavailable here (no browser can be installed), so the Stage 11 evidence is structural and
+  source-level plus the live HTTP and Node-rendered checks the suite runs

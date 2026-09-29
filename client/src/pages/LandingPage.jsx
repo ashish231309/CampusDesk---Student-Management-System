@@ -20,6 +20,7 @@ import { buttonClasses } from '../components/ui/buttonStyles.js';
 import { appConfig } from '../config/app.js';
 import { paths } from '../routes/paths.js';
 import { formatDate } from '../utils/format.js';
+import { PAGE_SIZE, PAGE_SIZE_OPTIONS } from '../constants/student.js';
 
 const CAPABILITIES = [
   {
@@ -201,7 +202,9 @@ export default function LandingPage() {
               {[
                 { label: 'Student fields', value: '9' },
                 { label: 'Search + filters', value: 'Live' },
-                { label: 'Records per page', value: '8' },
+                // Read from the register's own constant: the number a visitor is
+                // told here can never drift away from what the product does.
+                { label: 'Rows per page', value: `${PAGE_SIZE}–${PAGE_SIZE_OPTIONS.at(-1)}` },
               ].map(({ label, value }) => (
                 <div key={label}>
                   <dt className="eyebrow">{label}</dt>

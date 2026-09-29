@@ -218,7 +218,11 @@ export default function StudentDetailPage() {
               ].map((fact) => (
                 <div key={fact.label} className="min-w-0">
                   <dt className="eyebrow">{fact.label}</dt>
-                  <dd className="mt-1 truncate text-label font-medium text-ink">{fact.value}</dd>
+                  {/* Shortened on one line so the identity card keeps its shape;
+                      the full value is one hover (or one zoom) away. */}
+                  <dd className="mt-1 truncate text-label font-medium text-ink" title={fact.value}>
+                    {fact.value}
+                  </dd>
                 </div>
               ))}
             </dl>

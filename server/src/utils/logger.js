@@ -11,12 +11,11 @@ const write = (level, stream, color, scope, message, meta) => {
   const timestamp = new Date().toISOString().slice(11, 19);
   const line = `${tint(90, timestamp)} ${tint(color, level.toUpperCase().padEnd(5))} ${tint(90, `[${scope}]`)} ${message}`;
 
-  if (meta !== undefined) stream.write(`${line}\n`, () => {});
+  stream.write(`${line}\n`);
+
   if (meta !== undefined) {
     stream.write(`${typeof meta === 'string' ? meta : JSON.stringify(meta, null, 2)}\n`);
-    return;
   }
-  stream.write(`${line}\n`);
 };
 
 /**

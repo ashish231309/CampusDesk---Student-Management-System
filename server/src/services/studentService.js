@@ -20,6 +20,14 @@ const DUPLICATE_KEY = 11000;
  * attempts take the next numbers before giving up. */
 const MAX_ID_ATTEMPTS = 5;
 
+/**
+ * Only the string values the endpoint's validators produce are ever read. A
+ * caller that hands this module something else — a duplicated query parameter
+ * that arrived as an array, say — gets that value left out of the filter instead
+ * of a crash or an unintended query shape.
+ */
+const asText = (value) => (typeof value === 'string' ? value : '');
+
 /** Regex metacharacters in user input must never reach the query engine raw. */
 export const escapeRegExp = (value = '') => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 
@@ -92,7 +100,7 @@ const termConditions = (term) => {
  */
 export const buildStudentQuery = ({ search, status, year, department, course } = {}) => {
   const query = {};
-  const terms = splitSearchTerms(search?.slice(0, MAX_SEARCH_LENGTH));
+  const terms = splitSearchTerms(asText(search).slice(0, MAX_SEARCH_LENGTH));
 
   if (terms.length === 1) {
     query.$or = termConditions(terms[0]);
@@ -101,10 +109,14 @@ export const buildStudentQuery = ({ search, status, year, department, course } =
     query.$and = terms.map((term) => ({ $or: termConditions(term) }));
   }
 
-  if (status) query.enrollmentStatus = status;
-  if (year) query.year = year;
-  if (department?.trim()) query.department = exactCaseInsensitive(department);
-  if (course?.trim()) query.course = exactCaseInsensitive(course);
+  if (asText(status)) query.enrollmentStatus = status;
+  if (asText(year)) query.year = year;
+
+  const departmentText = asText(department).trim();
+  if (departmentText) query.department = exactCaseInsensitive(departmentText);
+
+  const courseText = asText(course).trim();
+  if (courseText) query.course = exactCaseInsensitive(courseText);
 
   return query;
 };
@@ -156,9 +168,24 @@ export const getStudentFilterOptions = async () => {
   };
 };
 
+/**
+ * The deepest document the register will ever skip past.
+ *
+ * Validation bounds `page` to a positive integer, but not the arithmetic that
+ * follows: a hand-written `?page=1e20` would otherwise hand the driver a skip of
+ * `1e21`, which is outside the 64-bit integer range a MongoDB query accepts, and
+ * the request would fail instead of answering. Capping the skip keeps an
+ * out-of-range page an honest empty page, and the page reported back is the page
+ * whose window was actually read.
+ */
+export const MAX_SKIP = 1_000_000;
+
 export const resolvePagination = ({ page = 1, limit = DEFAULT_PAGE_SIZE } = {}) => {
   const safeLimit = Math.min(Math.max(Number(limit) || DEFAULT_PAGE_SIZE, 1), MAX_PAGE_SIZE);
-  const safePage = Math.max(Number(page) || 1, 1);
+  const requestedPage = Math.max(Math.trunc(Number(page) || 1), 1);
+  const lastPage = Math.floor(MAX_SKIP / safeLimit) + 1;
+  const safePage = Math.min(requestedPage, lastPage);
+
   return { page: safePage, limit: safeLimit, skip: (safePage - 1) * safeLimit };
 };
 

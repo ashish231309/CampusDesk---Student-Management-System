@@ -44,9 +44,24 @@ const department = () =>
   body('department').trim().notEmpty().withMessage('Department is required.')
     .bail().isLength({ max: 120 }).withMessage('Department cannot exceed 120 characters.');
 
+/**
+ * A registration date records something that has already happened. The form
+ * refuses a future date at the field, and the API enforces the same rule so the
+ * product's own rule cannot be bypassed by anything that is not the form — a
+ * record with a date that has not arrived yet would be nonsense on the register
+ * (and would allocate a student ID for a year nobody is in).
+ */
+const isNotInTheFuture = (value) => {
+  const date = value instanceof Date ? value : new Date(value);
+  return !Number.isNaN(date.getTime()) && date.getTime() <= Date.now();
+};
+
 const dateOfRegistration = () =>
   body('dateOfRegistration').optional({ values: 'falsy' }).isISO8601()
-    .withMessage('Date of registration must be a valid date.').toDate();
+    .withMessage('Date of registration must be a valid date.')
+    .bail().custom(isNotInTheFuture)
+    .withMessage('Date of registration cannot be in the future.')
+    .toDate();
 
 const enrollmentStatus = () =>
   body('enrollmentStatus').optional({ values: 'falsy' }).trim()
@@ -123,8 +138,35 @@ export const updateStudentRules = [
   ]),
 ];
 
+/**
+ * Every list parameter is one value.
+ *
+ * Express parses `?status=active&status=inactive` into an array. Left alone that
+ * array either reaches MongoDB as a shape nobody intended (`{ status: [a, b] }`,
+ * which silently matches nothing) or throws while being trimmed — which is a 500
+ * for a URL anybody can write. Nothing in CampusDesk sends a parameter twice, so
+ * a repeated one is refused with the same 422 as any other invalid value.
+ */
+const singleValue = (fields) =>
+  fields.map((field) =>
+    query(field)
+      .custom((value) => value === undefined || typeof value === 'string')
+      .withMessage(`Provide \`${field}\` once.`),
+  );
+
 /** Query rules for the search / filter / sort / pagination endpoint. */
 export const listStudentRules = [
+  ...singleValue([
+    'search',
+    'status',
+    'year',
+    'department',
+    'course',
+    'sort',
+    'order',
+    'page',
+    'limit',
+  ]),
   query('search').optional().trim().isLength({ max: MAX_SEARCH_LENGTH })
     .withMessage(`Search term must be ${MAX_SEARCH_LENGTH} characters or fewer.`),
   query('status').optional().trim().isIn(ENROLLMENT_STATUSES)

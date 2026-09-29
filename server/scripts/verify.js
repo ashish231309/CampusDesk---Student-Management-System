@@ -21,6 +21,7 @@ const { env } = await import('../src/config/env.js');
 // budget) that src/server.js sets before serving requests.
 await import('../src/config/db.js');
 const {
+  MAX_SKIP,
   buildPageMeta,
   buildPhonePatterns,
   buildStudentQuery,
@@ -3978,6 +3979,504 @@ await check('animated surfaces keep their focus, their labels and their state', 
   assert(
     !/while\s*\(\s*true/.test(clientSource) && !/setInterval/.test(clientSource),
     'no unbounded loop or repeating timer animates anything',
+  );
+});
+
+// ---------------------------------------------------------------------------
+section('Security, input hardening & responsive integrity (Stage 11)');
+// ---------------------------------------------------------------------------
+
+/**
+ * The register's list parameters are one value each.
+ *
+ * Express parses a repeated parameter into an array. Before this was enforced
+ * that array either reached the query builder and threw while being trimmed (a
+ * 500 for a URL anybody can type) or became a query shape nobody intended, so
+ * these checks pin down both halves: the request is refused, and nothing reaches
+ * the model.
+ */
+await check('every register query parameter is a single value', async () => {
+  const repeated = [
+    'status=active&status=inactive',
+    'year=1st%20Year&year=2nd%20Year',
+    'department=a&department=b',
+    'course=a&course=b',
+    'search=kumar&search=sharma',
+    'sort=name&sort=email',
+    'page=1&page=2',
+    'limit=5&limit=10',
+  ];
+
+  for (const pairs of repeated) {
+    let reachedModel = false;
+
+    const response = await withModelStubs(
+      {
+        ...userStubs,
+        Student: {
+          find: () => {
+            reachedModel = true;
+            return chainableQuery([]);
+          },
+          countDocuments: async () => 0,
+        },
+      },
+      () => stubRequest('GET', `/api/students?${pairs}`),
+    );
+
+    assert(response.status === 422, `\`${pairs}\` should be refused, received ${response.status}`);
+    assert(reachedModel === false, `\`${pairs}\` must be refused before any query is built`);
+  }
+
+  // A single value for the same parameters is still perfectly usable.
+  let filter;
+  const single = await withModelStubs(
+    {
+      ...userStubs,
+      Student: {
+        find: (value) => {
+          filter = value;
+          return chainableQuery([]);
+        },
+        countDocuments: async () => 0,
+      },
+    },
+    () => stubRequest('GET', '/api/students?status=active&year=1st%20Year&sort=name&page=2&limit=25'),
+  );
+
+  assert(single.status === 200, `a single value per parameter should still work, received ${single.status}`);
+  assert(filter.enrollmentStatus === 'active' && filter.year === '1st Year', 'and should still reach the query');
+
+  const source = readFileSync(new URL('../src/validators/studentValidators.js', import.meta.url), 'utf8');
+  assert(
+    source.includes('const singleValue = (fields) =>') && source.includes('...singleValue(['),
+    'the contract lives in one place in the validators',
+  );
+
+  const guarded = source.slice(source.indexOf('...singleValue(['));
+  for (const field of ['search', 'status', 'year', 'department', 'course', 'sort', 'order', 'page', 'limit']) {
+    assert(guarded.slice(0, 400).includes(`'${field}',`), `\`${field}\` should be covered by the single-value rule`);
+  }
+});
+
+await check('a filter in the wrong shape can never reach the query engine', async () => {
+  // The pure builder is used by other callers too, so it stays total: a value
+  // that is not a string is left out rather than trusted, thrown on, or turned
+  // into a query operator.
+  const hostile = buildStudentQuery({
+    status: ['active', 'inactive'],
+    year: { $ne: '1st Year' },
+    department: ['CSE'],
+    course: { $regex: '.*' },
+    search: ['kumar', 'sharma'],
+  });
+
+  assert(typeof hostile === 'object' && hostile !== null, 'the builder must still answer');
+  assert(hostile.enrollmentStatus === undefined && hostile.year === undefined, 'an array or object is not a status or a year');
+  assert(hostile.department === undefined && hostile.course === undefined, 'and it is not a department or a course either');
+  assert(
+    !JSON.stringify(hostile).includes('$ne') && !JSON.stringify(hostile).includes('$regex'),
+    'no query operator may be built from a parameter value',
+  );
+
+  const text = buildStudentQuery({ status: 'active', year: '2nd Year', department: 'CSE', course: 'BBA' });
+  assert(text.enrollmentStatus === 'active' && text.year === '2nd Year', 'plain strings still filter');
+  assert(text.department instanceof RegExp && text.course instanceof RegExp, 'and still match case-insensitively');
+
+  // Over HTTP, operator syntax in a parameter name is dropped rather than parsed.
+  for (const path of [
+    '/api/students?status%5B%24ne%5D=active',
+    '/api/students?department%5B%24regex%5D=.*',
+    '/api/students?sort%5B%24ne%5D=name',
+    '/api/students?limit%5B%24gt%5D=0',
+  ]) {
+    let filter;
+    const response = await withModelStubs(
+      {
+        ...userStubs,
+        Student: {
+          find: (value) => {
+            filter = value;
+            return chainableQuery([]);
+          },
+          countDocuments: async () => 0,
+        },
+      },
+      () => stubRequest('GET', path),
+    );
+
+    assert(response.status === 200, `${path} should be answered, received ${response.status}`);
+    assert(
+      Object.keys(filter).length === 0 && !JSON.stringify(filter).includes('$'),
+      `${path} must not contribute a clause to the query`,
+    );
+  }
+});
+
+await check('an out-of-range page answers as an empty page, never as an unbounded skip', async () => {
+  const absurd = resolvePagination({ page: 1e20, limit: 10 });
+  assert(Number.isSafeInteger(absurd.skip), `a skip must stay representable, got ${absurd.skip}`);
+  assert(absurd.skip <= MAX_SKIP, `a skip must stay bounded, got ${absurd.skip}`);
+  assert(absurd.page <= absurd.skip / absurd.limit + 1, 'the page reported back is the page actually read');
+
+  for (const value of [Infinity, -5, 0, 'abc', null, undefined, 2]) {
+    const safe = resolvePagination({ page: value, limit: 10 });
+    assert(Number.isSafeInteger(safe.skip) && safe.skip >= 0, `page \`${value}\` produced skip ${safe.skip}`);
+    assert(Number.isSafeInteger(safe.limit) && safe.limit >= 1, `page \`${value}\` produced limit ${safe.limit}`);
+  }
+
+  let query;
+  const response = await withModelStubs(
+    {
+      ...userStubs,
+      Student: {
+        find: () => {
+          query = chainableQuery([]);
+          return query;
+        },
+        countDocuments: async () => 0,
+      },
+    },
+    () => stubRequest('GET', '/api/students?page=99999999999999999999&limit=100'),
+  );
+
+  assert(response.status === 200, `an impossible page should still answer, received ${response.status}`);
+  assert(Number.isSafeInteger(query.skipped), `the driver must never be handed ${query.skipped}`);
+  assert(query.skipped <= MAX_SKIP, `the skip must be bounded, got ${query.skipped}`);
+  assert(response.body.meta.page <= MAX_SKIP + 1, 'the response describes the page it actually read');
+});
+
+await check('a registration date cannot be in the future', async () => {
+  const future = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString();
+  const past = '2020-01-01';
+
+  const created = await withModelStubs(
+    {
+      User: { findById: async () => fakeUser },
+      Student: { create: async (value) => fakeDocument(value) },
+    },
+    () => stubRequest('POST', '/api/students', { body: { ...VALID_STUDENT, dateOfRegistration: future } }),
+  );
+
+  assert(created.status === 422, `a future date should be refused, received ${created.status}`);
+  assert(
+    /future/i.test(created.body.error.details?.dateOfRegistration ?? ''),
+    'and the field should say what is wrong',
+  );
+
+  const patched = await withModelStubs(
+    { User: { findById: async () => fakeUser }, Student: { findById: async () => fakeDocument() } },
+    () =>
+      stubRequest('PATCH', '/api/students/64b7f9c2e1a2b3c4d5e6f7a8', {
+        body: { dateOfRegistration: future },
+      }),
+  );
+
+  assert(patched.status === 422, `an edit must not move a date into the future either, received ${patched.status}`);
+
+  let created_value;
+  const accepted = await withModelStubs(
+    {
+      User: { findById: async () => fakeUser },
+      Student: {
+        create: async (value) => {
+          created_value = value;
+          return fakeDocument(value);
+        },
+      },
+    },
+    () => stubRequest('POST', '/api/students', { body: { ...VALID_STUDENT, dateOfRegistration: past } }),
+  );
+
+  assert(accepted.status === 201, `a real date must still be accepted, received ${accepted.status}`);
+  assert(created_value.dateOfRegistration instanceof Date, 'and still reach the model as a Date');
+
+  // The form refuses it first, so the rule is stated in both places.
+  assert(
+    sourceOf('pages/StudentFormPage.jsx').includes('notFutureDate()'),
+    'the form refuses a future date at the field as well',
+  );
+});
+
+await check('no secret is committed, and none can reach the browser', async () => {
+  const repo = new URL('../../', import.meta.url);
+  const serverEnv = readFileSync(new URL('server/.env.example', repo), 'utf8');
+  const clientEnv = readFileSync(new URL('client/.env.example', repo), 'utf8');
+
+  for (const [name, template] of [
+    ['server/.env.example', serverEnv],
+    ['client/.env.example', clientEnv],
+  ]) {
+    assert(template.includes('JWT_SECRET') || name.startsWith('client'), `${name} should document the configuration`);
+    assert(
+      !/[0-9a-f]{32,}/i.test(template),
+      `${name} must contain placeholders, not a real key`,
+    );
+    assert(!/mongodb\+srv:\/\/[^:\s]+:[^@\s]+@/.test(template), `${name} must not carry a real connection string`);
+  }
+
+  const ignore = readFileSync(new URL('.gitignore', repo), 'utf8');
+  assert(/^\.env$/m.test(ignore) && /^!\.env\.example$/m.test(ignore), 'real environment files are ignored, templates are not');
+
+  const secretShapes = [
+    /mongodb\+srv:\/\/[^:\s/]+:[^@\s]+@/i,
+    /eyJ[A-Za-z0-9_-]{20,}\.[A-Za-z0-9_-]{20,}\./,
+    /-----BEGIN [A-Z ]*PRIVATE KEY-----/,
+  ];
+
+  for (const [name, source] of clientFiles) {
+    for (const shape of secretShapes) {
+      assert(!shape.test(source), `${name} looks like it contains a real credential`);
+    }
+    assert(
+      !/import\.meta\.env\.(?!VITE_|DEV|PROD|MODE|BASE_URL|SSR)/.test(source),
+      `${name} reads a custom environment variable that is not VITE_-prefixed`,
+    );
+    for (const serverOnly of ['JWT_SECRET', 'MONGODB_URI', 'BCRYPT_SALT_ROUNDS', 'process.env']) {
+      assert(!source.includes(serverOnly), `${name} must not reach for the server's ${serverOnly}`);
+    }
+  }
+
+  for (const name of ['config/env.js', 'middleware/requireAuth.js', 'utils/token.js', 'services/authService.js']) {
+    const source = readFileSync(new URL(`../src/${name}`, import.meta.url), 'utf8');
+    for (const shape of secretShapes) {
+      assert(!shape.test(source), `server/src/${name} looks like it contains a real credential`);
+    }
+  }
+
+  assert(
+    readFileSync(new URL('../src/config/env.js', import.meta.url), 'utf8').includes(
+      'JWT_SECRET must be set to a strong, unique value in production.',
+    ),
+    'a production boot without a real secret must still refuse to start',
+  );
+});
+
+await check('the update payload is allowlisted end to end', async () => {
+  let created;
+  const response = await withModelStubs(
+    {
+      User: { findById: async () => fakeUser },
+      Student: {
+        create: async (value) => {
+          created = value;
+          return fakeDocument(value);
+        },
+      },
+    },
+    () =>
+      stubRequest('POST', '/api/students', {
+        body: {
+          ...VALID_STUDENT,
+          enrollmentStatus: 'active',
+          avatarUrl: '',
+          role: 'admin',
+          teacherNotes: 'not a field',
+          $where: 'this.name',
+        },
+      }),
+  );
+
+  assert(response.status === 201, `a normal create should succeed, received ${response.status}`);
+  assert(
+    Object.keys(created).sort().join(',') ===
+      'avatarUrl,course,dateOfRegistration,department,email,enrollmentStatus,name,phone,year',
+    `only the editable fields may reach the model, got ${Object.keys(created).join(', ')}`,
+  );
+  assert(created.createdAt === undefined && created.role === undefined, 'no protected or unknown field is written');
+  assert(Object.keys(created).every((key) => !key.startsWith('$')), 'no operator may be written as a field');
+
+  for (const field of ['studentId', 'id', '_id', 'createdAt', 'updatedAt', '__v']) {
+    const refused = await withModelStubs(
+      {
+        User: { findById: async () => fakeUser },
+        Student: { create: async (value) => fakeDocument(value) },
+      },
+      () => stubRequest('POST', '/api/students', { body: { ...VALID_STUDENT, [field]: 'injected' } }),
+    );
+
+    assert(refused.status === 422, `\`${field}\` should be refused outright, received ${refused.status}`);
+    assert(refused.body.error.details?.[field], `\`${field}\` should be named in the error`);
+  }
+
+  const document = fakeDocument();
+  const patched = await withModelStubs(
+    { User: { findById: async () => fakeUser }, Student: { findById: async () => document } },
+    () =>
+      stubRequest('PATCH', '/api/students/64b7f9c2e1a2b3c4d5e6f7a8', {
+        body: { name: 'Renamed', role: 'admin', studentId: 'CDS-2026-9999' },
+      }),
+  );
+
+  assert(patched.status === 422, `a protected field in an edit should be refused, received ${patched.status}`);
+  assert(document.name === VALID_STUDENT.name, 'and nothing may be applied to the record');
+
+  const renamed = fakeDocument();
+  const clean = await withModelStubs(
+    { User: { findById: async () => fakeUser }, Student: { findById: async () => renamed } },
+    () =>
+      stubRequest('PATCH', '/api/students/64b7f9c2e1a2b3c4d5e6f7a8', {
+        body: { name: 'Renamed', role: 'admin', constructor: 'nope' },
+      }),
+  );
+
+  assert(clean.status === 200, `an allowlisted edit should succeed, received ${clean.status}`);
+  assert(renamed.name === 'Renamed', 'the allowlisted field is applied');
+  assert(renamed.role === undefined, 'an unknown field is dropped rather than applied');
+  assert(renamed.studentId === 'CDS-2026-0042', 'and the generated student ID is untouched');
+  assert(({}).polluted === undefined, 'no prototype pollution survives the request');
+});
+
+await check('nothing the API returns carries password material', async () => {
+  const password = 'passw0rd123';
+  const saved = [];
+
+  const registered = await withModelStubs(
+    { ...noWrites(saved), User: { exists: async () => null } },
+    () => registerAttempt({ name: 'Ananya Sharma', email: 'ananya@campusdesk.edu', password }),
+  );
+
+  const account = await makeAccount({ password });
+  const signedIn = await withModelStubs(
+    { ...noWrites(), User: { findOne: () => selectable(account) } },
+    () => loginAttempt({ email: account.email, password }),
+  );
+
+  const me = await withModelStubs(
+    { ...noWrites(), User: { findById: async () => account } },
+    () => stubRequest('GET', '/api/auth/me'),
+  );
+
+  const rejected = await withModelStubs(
+    { ...noWrites(), User: { findOne: () => selectable(account) } },
+    () => loginAttempt({ email: account.email, password: 'definitely-wrong' }),
+  );
+
+  assert(registered.status === 201 && signedIn.status === 200 && me.status === 200, 'the three happy paths should answer');
+  assert(rejected.status === 401, 'a rejected sign-in should answer 401');
+
+  for (const [name, response] of [
+    ['registration', registered],
+    ['sign-in', signedIn],
+    ['me', me],
+    ['a rejected sign-in', rejected],
+  ]) {
+    const raw = JSON.stringify(response.body);
+    assert(!raw.includes(password), `${name} must never echo the password`);
+    assert(!/passwordHash|password\s*:/.test(raw), `${name} must never carry a hash or a password field`);
+    assert(!/\$2[aby]\$/.test(raw), `${name} must never carry anything that looks like a bcrypt hash`);
+    assert(saved.every((doc) => doc.passwordHash !== password), 'the stored hash is never the plaintext');
+  }
+});
+
+await check('the client and the API agree on every list vocabulary', async () => {
+  const domainBundle = await bundleClient(
+    { studentDomain: 'constants/student.js', studentQuery: 'utils/studentQuery.js' },
+    { baseUrl: `${stubUrl}/api` },
+  );
+
+  const { PAGE_SIZE, PAGE_SIZE_OPTIONS, SORT_OPTIONS, STUDENT_YEARS, ENROLLMENT_STATUS_VALUES } =
+    domainBundle.loaded.studentDomain;
+  const { LIST_DEFAULTS, readStudentListQuery } = domainBundle.loaded.studentQuery;
+
+  const {
+    DEFAULT_PAGE_SIZE,
+    DEFAULT_STUDENT_SORT_FIELD,
+    ENROLLMENT_STATUSES: SERVER_STATUSES,
+    MAX_PAGE_SIZE,
+    STUDENT_SORT_FIELDS: SERVER_SORT_FIELDS,
+    STUDENT_YEARS: SERVER_YEARS,
+  } = await import('../src/constants/student.js');
+
+  assert(
+    PAGE_SIZE_OPTIONS.every((size) => size >= 1 && size <= MAX_PAGE_SIZE),
+    'every page size the register offers must be one the API accepts',
+  );
+  assert(PAGE_SIZE === DEFAULT_PAGE_SIZE, 'the register starts on the default page size the API uses');
+  assert(
+    SORT_OPTIONS.every((option) => SERVER_SORT_FIELDS.includes(option.value)),
+    'every sort the register offers must be a field the API can sort on',
+  );
+  assert(
+    STUDENT_YEARS.join('|') === SERVER_YEARS.join('|'),
+    'the years the client offers are exactly the years the API validates',
+  );
+  assert(
+    ENROLLMENT_STATUS_VALUES.join('|') === SERVER_STATUSES.join('|'),
+    'and so are the enrollment statuses',
+  );
+
+  const fallback = readStudentListQuery(new URLSearchParams('sort=passwordHash&limit=1000000&page=abc&year=9th%20Year'));
+  assert(
+    fallback.sort === LIST_DEFAULTS.sort &&
+      fallback.page === 1 &&
+      fallback.limit === DEFAULT_PAGE_SIZE &&
+      fallback.year === '' &&
+      LIST_DEFAULTS.sort === `-${DEFAULT_STUDENT_SORT_FIELD}`,
+    'values the API would refuse never make it into a request',
+  );
+
+  domainBundle.cleanup();
+});
+
+await check('a value a user typed stays readable however it is shortened', () => {
+  const table = sourceOf('components/students/StudentTable.jsx');
+  const detail = sourceOf('pages/StudentDetailPage.jsx');
+  const dashboard = sourceOf('pages/DashboardPage.jsx');
+
+  // Every field the register shortens keeps its full value on the element, so a
+  // long name is shortened rather than lost.
+  for (const field of ['name', 'studentId', 'course', 'department', 'year']) {
+    assert(
+      table.includes(`title={student.${field}}`),
+      `the register should keep the full \`${field}\` available when it truncates`,
+    );
+  }
+
+  assert(
+    (table.match(/title=\{student\./g) ?? []).length >= 8,
+    'both the table and the mobile card carry the full value',
+  );
+  assert(detail.includes('title={fact.value}'), 'the detail identity card does too');
+  assert(
+    dashboard.includes('title={`${label} — ${formatCount(count)}'),
+    'and so does every dashboard distribution row',
+  );
+
+  // Nothing is dropped on a narrow screen: the columns the table hides only past
+  // a certain width are all present in the card the same component renders.
+  const mobileCard = table.slice(table.indexOf('renderMobileCard'));
+  for (const field of ['course', 'year', 'department', 'dateOfRegistration']) {
+    assert(mobileCard.includes(`student.${field}`), `the mobile card should carry \`${field}\``);
+  }
+
+  assert(
+    !/overflow-x-scroll|\bw-\[(\d{4,})px\]/.test(table) && table.includes('min-w-0'),
+    'the register adapts by wrapping and truncating rather than overflowing',
+  );
+});
+
+await check('the figures the product advertises are the figures it uses', () => {
+  const landing = sourceOf('pages/LandingPage.jsx');
+
+  assert(
+    landing.includes('PAGE_SIZE') && landing.includes('PAGE_SIZE_OPTIONS'),
+    "the landing page reads the register's own page-size constants",
+  );
+  assert(
+    !landing.includes("value: '8'"),
+    'and no longer advertises a page size the register never had',
+  );
+  assert(
+    /label: 'Rows per page'/.test(landing),
+    "the claim it does make is the register's own vocabulary",
+  );
+
+  const readme = readFileSync(new URL('../../README.md', import.meta.url), 'utf8');
+  const advertised = readme.match(/per page[^\n]*/i)?.[0] ?? '';
+  assert(
+    !/\b8\b/.test(advertised),
+    `the README should not advertise a stale page size either, found: ${advertised}`,
   );
 });
 
