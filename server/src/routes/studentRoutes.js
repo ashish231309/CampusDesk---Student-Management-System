@@ -1,11 +1,11 @@
 import { Router } from 'express';
 import {
-  createStudent,
-  getStats,
   getStudent,
-  listStudents,
+  getStats,
+  getStudents,
+  patchStudent,
+  postStudent,
   removeStudent,
-  updateStudent,
 } from '../controllers/studentController.js';
 import { requireAuth } from '../middleware/requireAuth.js';
 import { validate } from '../middleware/validate.js';
@@ -21,7 +21,10 @@ const router = Router();
 // The whole student area sits behind authentication.
 router.use(requireAuth);
 
-router.route('/').get(listStudentRules, validate, listStudents).post(createStudentRules, validate, createStudent);
+router
+  .route('/')
+  .get(listStudentRules, validate, getStudents)
+  .post(createStudentRules, validate, postStudent);
 
 // Declared before /:id so `stats` is never read as a student id.
 router.get('/stats', getStats);
@@ -29,7 +32,7 @@ router.get('/stats', getStats);
 router
   .route('/:id')
   .get(studentIdParam, validate, getStudent)
-  .patch(updateStudentRules, validate, updateStudent)
+  .patch(updateStudentRules, validate, patchStudent)
   .delete(studentIdParam, validate, removeStudent);
 
 export default router;

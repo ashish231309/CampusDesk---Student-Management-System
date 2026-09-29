@@ -21,8 +21,8 @@ export class ApiError extends Error {
     return new ApiError(401, message, { code: 'UNAUTHORIZED' });
   }
 
-  static forbidden(message = 'You do not have permission to perform this action.') {
-    return new ApiError(403, message, { code: 'FORBIDDEN' });
+  static forbidden(message = 'You do not have permission to perform this action.', details) {
+    return new ApiError(403, message, { code: 'FORBIDDEN', details });
   }
 
   static notFound(message = 'The requested resource could not be found.') {
@@ -35,6 +35,13 @@ export class ApiError extends Error {
 
   static unprocessable(message = 'The submitted data failed validation.', details) {
     return new ApiError(422, message, { code: 'VALIDATION_ERROR', details });
+  }
+
+  /** Raised when MongoDB cannot be reached, so requests fail fast and clearly. */
+  static serviceUnavailable(
+    message = 'The database is unavailable right now. Please try again in a moment.',
+  ) {
+    return new ApiError(503, message, { code: 'DATABASE_UNAVAILABLE' });
   }
 
   /** Used by endpoints whose implementation lands in a later build stage. */

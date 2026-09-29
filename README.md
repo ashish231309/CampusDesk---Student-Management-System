@@ -6,10 +6,10 @@ current and watching enrolment across a campus.
 CampusDesk is built as an npm workspace monorepo: a React client and an Express/MongoDB API that
 share one repository and one set of scripts at the root.
 
-> **Build status:** the foundation is complete — project structure, design system, API layering,
-> database models and the application shell are in place. Authentication and the student CRUD
-> endpoints are the next milestones; the running preview uses sample records so the interface can be
-> reviewed end to end.
+> **Build status:** the foundation and the backend are complete — project structure, design system,
+> API layering, database models, validation, security middleware and a working student API on
+> MongoDB. Authentication is the next milestone; the running preview uses sample records so the
+> interface can be reviewed end to end.
 
 ---
 
@@ -18,14 +18,14 @@ share one repository and one set of scripts at the root.
 | Area | Status |
 | --- | --- |
 | Student registration and sign-in | next milestone |
-| Automatic student IDs (`CDS-YYYY-NNNN`) | model ready |
-| Add, edit, view and delete students | interface complete, API pending |
-| Search, filtering, sorting and pagination | interface working on sample data |
+| Automatic student IDs (`CDS-YYYY-NNNN`) | done — generated server-side |
+| Add, edit, view and delete students | API done, interface on sample data |
+| Search, filtering, sorting and pagination | API done, interface on sample data |
 | Interactive dashboard with enrolment summary | done |
 | Responsive layout (mobile → desktop) | done |
 | Animations and micro-interactions | done |
 | Server-side validation and error handling | done |
-| MongoDB integration | connection layer done, endpoints pending |
+| MongoDB integration | done — models, indexes and the student API |
 
 ## Technology stack
 
@@ -60,7 +60,7 @@ CampusDesk/
 │       ├── services/           API client and endpoint wrappers
 │       └── utils/              formatting, validation and class helpers
 ├── server/                     Express REST API
-│   ├── scripts/                foundation verification script
+│   ├── scripts/                verification suites (offline and database-backed)
 │   └── src/
 │       ├── config/             environment and database connections
 │       ├── constants/          shared domain constants
@@ -140,8 +140,9 @@ docker run --name campusdesk-mongo -p 27017:27017 -d mongo:7
 ```
 
 Mongoose creates the collections and indexes on first use. The API still starts without a database
-in development — `GET /api/health/ready` reports `degraded` and any endpoint that needs data returns
-an error — but production refuses to boot without a connection.
+in development — `GET /api/health/ready` answers `503` with `status: "degraded"`, and requests that
+need data fail within a couple of seconds with `503 DATABASE_UNAVAILABLE` instead of hanging — but
+production refuses to boot without a connection.
 
 ## API
 
@@ -166,13 +167,18 @@ All routes live under `/api` and answer with the same envelope:
 | `GET` | `/api/auth/me` | returns the signed-in user (requires a token) |
 | `GET` | `/api/students` | search, filter, sort, paginate (guarded) |
 | `GET` | `/api/students/stats` | dashboard counts (guarded) |
-| `POST` | `/api/students` | create (guarded) |
+| `POST` | `/api/students` | create — the student ID is generated server-side (guarded) |
 | `GET` | `/api/students/:id` | one student (guarded) |
 | `PATCH` | `/api/students/:id` | update (guarded) |
 | `DELETE` | `/api/students/:id` | remove (guarded) |
 
-The student area requires a bearer token. Endpoints marked *pending* currently answer
-`501 Not Implemented` rather than pretending to work.
+The student area requires a bearer token, and a token can only be obtained once the authentication
+handlers land. Endpoints marked *pending* currently answer `501 Not Implemented` rather than
+pretending to work.
+
+List queries combine: `?search=`, `?status=`, `?year=`, `?department=`, `?course=`, `?sort=`,
+`?order=`, `?page=` and `?limit=` — for example
+`/api/students?department=Computer%20Science&year=2nd%20Year&status=active&sort=name&order=asc`.
 
 ```bash
 curl http://localhost:5000/api/health
@@ -182,10 +188,19 @@ curl http://localhost:5000/api/students -H "Authorization: Bearer <token>"
 ## Verification
 
 ```bash
-npm run verify   # boots the API and checks configuration, helpers and every route
-npm run lint     # ESLint for both workspaces
-npm run build    # production client build
+npm run verify      # configuration, helpers, validation and the API itself (no database needed)
+npm run verify:db   # the same student API against a real MongoDB, then drops the verify database
+npm run lint        # ESLint for both workspaces
+npm run build       # production client build
 ```
+
+`npm run verify` is the fast suite: it exercises the request pipeline over HTTP with the models
+stubbed, so it runs anywhere. `npm run verify:db` is the one that proves the database behaviour —
+creation, generated IDs under concurrent writes, search, filters, sorting, pagination, statistics
+and deletion. It uses `VERIFY_MONGODB_URI` if you set one, otherwise your `MONGODB_URI` with the
+database name changed to `campusdesk_verify`, otherwise an ephemeral server started by
+`mongodb-memory-server`. If none can be reached it prints a skip notice and exits with code 2
+rather than reporting a pass it did not earn.
 
 ## Deployment
 

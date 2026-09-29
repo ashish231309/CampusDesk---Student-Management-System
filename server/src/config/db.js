@@ -12,6 +12,18 @@ const READY_STATES = {
 mongoose.set('strictQuery', true);
 
 /**
+ * How long an operation may wait for a usable connection before it fails.
+ *
+ * Mongoose buffers queries by default and gives up after 10 seconds. Left alone,
+ * a request that arrives while MongoDB is unreachable would occupy a connection
+ * for that long — and disabling buffering entirely is worse: with no connection
+ * the driver never settles the operation, so the request hangs indefinitely.
+ * A short, explicit budget keeps every affected request bounded, and the error
+ * handler turns the timeout into a clean 503.
+ */
+mongoose.set('bufferTimeoutMS', env.database.bufferTimeoutMS);
+
+/**
  * Connect to MongoDB.
  *
  * A missing database is a hard failure in production, but during local

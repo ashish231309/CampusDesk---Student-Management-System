@@ -1,5 +1,5 @@
-import mongoose from 'mongoose';
 import bcrypt from 'bcryptjs';
+import mongoose from 'mongoose';
 import { env } from '../config/env.js';
 
 export const USER_ROLES = Object.freeze(['admin', 'staff']);
@@ -52,21 +52,23 @@ const userSchema = new mongoose.Schema(
   },
 );
 
-/** Hash the password whenever it is set/changed through `password`. */
+/**
+ * Hashing stays on an async hook so the event loop is not blocked while a
+ * password is being derived. Assign the plaintext through the `password`
+ * virtual; it is never written to the database or kept on the document.
+ */
 userSchema.virtual('password').set(function setPassword(plaintext) {
   this._pendingPassword = plaintext;
 });
 
-userSchema.pre('validate', function stagePassword(next) {
-  if (this._pendingPassword) {
-    this.passwordHash = bcrypt.hashSync(this._pendingPassword, env.security.bcryptSaltRounds);
-    this._pendingPassword = undefined;
-  }
-  next();
+userSchema.pre('validate', async function hashPassword() {
+  if (!this._pendingPassword) return;
+  this.passwordHash = await bcrypt.hash(this._pendingPassword, env.security.bcryptSaltRounds);
+  this._pendingPassword = undefined;
 });
 
-userSchema.methods.verifyPassword = function verifyPassword(plaintext) {
-  if (!this.passwordHash) return Promise.resolve(false);
+userSchema.methods.verifyPassword = async function verifyPassword(plaintext) {
+  if (!this.passwordHash || typeof plaintext !== 'string') return false;
   return bcrypt.compare(plaintext, this.passwordHash);
 };
 

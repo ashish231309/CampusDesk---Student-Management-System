@@ -2,7 +2,7 @@
   "name": "@campusdesk/server",
   "version": "0.1.0",
   "private": true,
-  "description": "CampusDesk REST API — Express + MongoDB",
+  "description": "CampusDesk REST API \u2014 Express + MongoDB",
   "license": "MIT",
   "type": "module",
   "main": "src/server.js",
@@ -13,7 +13,8 @@
     "dev": "node --watch src/server.js",
     "start": "node src/server.js",
     "lint": "eslint .",
-    "verify": "node scripts/verify-foundation.js"
+    "verify": "node scripts/verify.js",
+    "verify:db": "node scripts/verify-database.js"
   },
   "dependencies": {
     "bcryptjs": "^3.0.3",
@@ -31,6 +32,7 @@
   "devDependencies": {
     "@eslint/js": "^10.0.1",
     "eslint": "^10.11.0",
-    "globals": "^17.12.0"
+    "globals": "^17.12.0",
+    "mongodb-memory-server-core": "^11.3.0"
   }
 }

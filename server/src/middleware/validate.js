@@ -12,7 +12,9 @@ export const validate = (req, _res, next) => {
 
   const details = {};
   for (const error of result.array()) {
-    if (!details[error.path]) details[error.path] = error.msg;
+    // Validators that apply to the whole body report an empty path.
+    const field = error.path || 'form';
+    if (!details[field]) details[field] = error.msg;
   }
 
   return next(ApiError.unprocessable('The submitted data failed validation.', details));

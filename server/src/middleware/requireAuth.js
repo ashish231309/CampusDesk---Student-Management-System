@@ -13,11 +13,15 @@ const readBearerToken = (req) => {
 /**
  * Gate for everything behind a protected area.
  *
- * The verification logic is complete and final; the endpoints that *issue*
- * tokens (register / login) arrive in the authentication stage, which is why an
+ * Verification is complete and final; the endpoints that *issue* tokens
+ * (register / login) arrive in the authentication stage, which is why an
  * anonymous request currently ends in 401 instead of a list of students.
+ *
+ * Express 5 only forwards a rejected promise automatically — a middleware that
+ * resolves is expected to have called `next()`. Missing that call stalls the
+ * request instead of failing it, so the success path calls it explicitly.
  */
-export const requireAuth = async (req, _res) => {
+export const requireAuth = async (req, _res, next) => {
   const token = readBearerToken(req);
   if (!token) {
     throw ApiError.unauthorized('Authentication is required to access this resource.');
@@ -31,4 +35,6 @@ export const requireAuth = async (req, _res) => {
 
   req.user = user;
   req.auth = { userId: user.id, role: user.role };
+
+  next();
 };

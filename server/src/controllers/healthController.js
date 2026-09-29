@@ -12,11 +12,18 @@ export const getHealth = (_req, res) =>
     timestamp: new Date().toISOString(),
   });
 
-/** Readiness probe including the database connection. */
+/**
+ * Readiness probe including the database connection.
+ *
+ * The body always keeps the standard envelope; the status code is what a
+ * monitor or load balancer acts on — 200 when the API can serve data, 503 when
+ * it cannot.
+ */
 export const getReadiness = (_req, res) => {
   const database = getDatabaseState();
-  return sendSuccess(res, {
-    status: database.isConnected ? 'ready' : 'degraded',
-    database,
-  });
+  return sendSuccess(
+    res,
+    { status: database.isConnected ? 'ready' : 'degraded', database },
+    { statusCode: database.isConnected ? 200 : 503 },
+  );
 };

@@ -53,6 +53,8 @@ export const env = Object.freeze({
     uri: readString('MONGODB_URI', 'mongodb://127.0.0.1:27017/campusdesk'),
     // Keep the boot sequence snappy when the database is not reachable yet.
     serverSelectionTimeoutMS: readNumber('MONGODB_SERVER_SELECTION_TIMEOUT_MS', 5000),
+    // How long a query may wait for a connection before it is abandoned.
+    bufferTimeoutMS: readNumber('MONGODB_BUFFER_TIMEOUT_MS', 2000),
   },
 
   jwt: {
