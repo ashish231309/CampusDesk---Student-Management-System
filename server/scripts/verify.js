@@ -4523,6 +4523,72 @@ await check('a value a user typed stays readable however it is shortened', () =>
   );
 });
 
+await check('small text keeps enough contrast on every surface it is used on', () => {
+  // The palette is fixed, so contrast can be decided exactly rather than by eye:
+  // the tokens come from the one stylesheet that defines them, and the pairs
+  // below are the surfaces the product actually puts small text on.
+  const css = readFileSync(new URL('../../client/src/index.css', import.meta.url), 'utf8');
+
+  const token = (name) => {
+    const value = css.match(new RegExp(`--color-${name}:\\s*(#[0-9a-f]{6})`, 'i'))?.[1];
+    assert(value, `the palette should still define \`${name}\``);
+    return value;
+  };
+
+  const luminance = (hex) => {
+    const channels = [1, 3, 5].map((index) => parseInt(hex.slice(index, index + 2), 16) / 255);
+    const linear = channels.map((channel) =>
+      channel <= 0.03928 ? channel / 12.92 : ((channel + 0.055) / 1.055) ** 2.4,
+    );
+    return 0.2126 * linear[0] + 0.7152 * linear[1] + 0.0722 * linear[2];
+  };
+
+  const ratio = (foreground, background) => {
+    const [light, dark] = [luminance(foreground), luminance(background)].sort((a, b) => b - a);
+    return (light + 0.05) / (dark + 0.05);
+  };
+
+  // AA for text under 18.66px (14px bold): every label, hint, meta line and
+  // table header in the product.
+  const AA = 4.5;
+
+  const pairs = [
+    ['body text on the page', 'ink', 'canvas'],
+    ['body text on a surface', 'ink', 'surface'],
+    ['secondary text on the page', 'muted', 'canvas'],
+    ['secondary text on a surface', 'muted', 'surface'],
+    ['secondary text inside a panel', 'muted', 'surface-muted'],
+    ['table head and quiet strips', 'charcoal', 'canvas-deep'],
+    ['status text on beige', 'ink', 'beige'],
+    ['error text', 'danger', 'surface'],
+    ['success text', 'success', 'surface'],
+    ['informational text', 'info', 'surface'],
+    ['warning text', 'warning-ink', 'surface'],
+    ['inverted text on the dark panel', 'canvas', 'charcoal'],
+  ];
+
+  for (const [where, foreground, background] of pairs) {
+    const value = ratio(token(foreground), token(background));
+    assert(
+      value >= AA,
+      `${where} should reach ${AA}:1, ${foreground} on ${background} measures ${value.toFixed(2)}:1`,
+    );
+  }
+
+  // The one place the quieter grey could not be used: the segmented control
+  // sits on that quiet strip, so its unselected options carry the stronger
+  // charcoal rather than being pushed under the threshold.
+  const segmented = sourceOf('components/ui/SegmentedControl.jsx');
+  assert(
+    !/text-muted/.test(segmented),
+    'the status control must not use the quieter grey on its darker strip',
+  );
+  assert(
+    segmented.includes('bg-canvas-deep') && segmented.includes("'text-charcoal hover:text-ink'"),
+    'and it should carry the readable colour instead',
+  );
+});
+
 await check('the figures the product advertises are the figures it uses', () => {
   const landing = sourceOf('pages/LandingPage.jsx');
 

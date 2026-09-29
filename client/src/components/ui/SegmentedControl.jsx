@@ -28,7 +28,11 @@ export const SegmentedControl = ({ name, label, options = [], value, onChange, c
           onClick={() => onChange(option.value)}
           className={cx(
             'focus-ring relative flex-1 rounded-lg px-3 py-2 text-label font-semibold transition-colors duration-150',
-            isActive ? 'text-ink' : 'text-muted hover:text-charcoal',
+            // The strip behind these options is `canvas-deep`, where the muted
+            // grey falls just under 4.5:1 at this size. Charcoal keeps both
+            // options readable; the sliding white pill, not the text weight, is
+            // what marks the chosen one.
+            isActive ? 'text-ink' : 'text-charcoal hover:text-ink',
           )}
         >
           {isActive ? (

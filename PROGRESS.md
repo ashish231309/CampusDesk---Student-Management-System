@@ -283,13 +283,20 @@ later stages, and database-backed verification wherever MongoDB is available.
 - The landing page stopped advertising a page size the register never had: the example panel
   reads the register's own `PAGE_SIZE`/`PAGE_SIZE_OPTIONS` constants, and the README no longer
   repeats the stale figure
-- `npm run verify` grew to 189 checks with eleven genuine Stage 11 checks, not count-padding:
+- The colour audit was done as arithmetic rather than by eye: every text/background pair the
+  product ships was measured against WCAG AA using the tokens in `index.css`. The dark brand
+  panel, the tinted alerts and the beige chips all clear it, and one place did not — the
+  enrollment-status control put its unselected options in the muted grey on the darker quiet
+  strip, which measures 4.42:1 at 13px. Those options now use charcoal (10.6:1), so the control
+  reads as clearly as everything around it without a new colour being introduced
+- `npm run verify` grew to 190 checks with twelve genuine Stage 11 checks, not count-padding:
   every list parameter being a single value, hostile parameter shapes never reaching the
   query engine, the page bound held over HTTP, the future-date rule on create and update,
   no committed secret reaching the browser bundle, the create/update allowlist end to end,
   password material appearing in no auth response, the client's list vocabulary matching the
   API's exactly, an unplanned failure leaking nothing to the caller, truncated values keeping
-  their full text, and the marketing copy matching the register's real constants
+  their full text, small text clearing 4.5:1 on every surface it is used on, and the marketing
+  copy matching the register's real constants
 - Nine deliberate regressions were injected one at a time to prove the suite still has teeth —
   the student routes' session requirement removed, an unlisted field added to the sort
   allowlist, the password hash left in the serialized account, the update validator's
@@ -298,11 +305,12 @@ later stages, and database-backed verification wherever MongoDB is available.
   loading button left pressable, and a forbidden 700ms transition reintroduced. Each was
   caught by a named check (180/188, 186/188, 183/188, 187/188, 187/188, 186/188, 187/188,
   186/188 and 186/188 respectively), every file was restored byte-identically, and the suite
-  returned to the full count; the new error-sanitisation check was proved the same way by
-  making the API echo the thrown message, which it caught (188/189) before the handler was
-  put back
-- Gates: `npm run lint` clean, `npm run build` ✓ (`index-CCLbFGT9.js` 431.52 kB /
-  138.09 kB gzipped), `npm run verify` 189/189, `npm audit` 0 vulnerabilities,
+  returned to the full count. The two checks added after that run were proved the same way: the
+  error-sanitisation check caught the API being made to echo the thrown message (188/189 before
+  the handler was put back), and the contrast check caught the status control's options being
+  returned to the muted grey (189/190 before the colour was restored)
+- Gates: `npm run lint` clean, `npm run build` ✓ (`index-DxcmU1rH.js` 431.52 kB /
+  138.10 kB gzipped), `npm run verify` 190/190, `npm audit` 0 vulnerabilities,
   `npm outdated` empty, and the built bundle carries no server-only module; `npm run verify:db`
   is still BLOCKED in this environment — `mongodb-memory-server` cannot download MongoDB
   (`fastdl.mongodb.org` unreachable) and no local instance exists, so its 50 checks were not
