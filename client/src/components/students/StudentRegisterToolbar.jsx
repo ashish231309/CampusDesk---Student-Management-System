@@ -2,6 +2,7 @@ import { SlidersHorizontal } from 'lucide-react';
 
 import { SearchInput } from '../ui/SearchInput.jsx';
 import { Select } from '../ui/Field.jsx';
+import { Spinner } from '../ui/Spinner.jsx';
 import {
   ENROLLMENT_STATUSES,
   PAGE_SIZE_OPTIONS,
@@ -15,12 +16,18 @@ const FILTER_CLASS = 'h-10 w-full text-label sm:w-auto sm:min-w-[9.5rem]';
  * row of equal boxes:
  *
  *   search   — what the user typed
+ *   Sort/Show — how the same students are presented
  *   Narrow   — the filters that change *which* students are listed
- *   Show     — the choices that only change how the same students are presented
  *
  * The hierarchy is what stops the toolbar reading as a collection of unrelated
  * controls, and it survives the move to one column on a phone without any
  * additional state.
+ *
+ * The toolbar also answers two questions without the user having to open
+ * anything: which controls are currently narrowing the register (each carries an
+ * active treatment, and the strip counts them), and whether the register is
+ * being read again after a change (`isUpdating`, which is not the same as the
+ * search box being busy).
  *
  * It owns nothing: every value comes from the URL through the register hook, and
  * every change goes straight back through it.
@@ -29,13 +36,16 @@ export const StudentRegisterToolbar = ({
   query,
   searchTerm,
   isSearching,
+  isUpdating,
+  isFiltered,
+  activeFilterCount,
   onSearchChange,
   onSearchClear,
   options,
   onFilterChange,
 }) => (
   <div className="border-b border-line/60">
-    <div className="flex flex-col gap-3 px-panel py-4 lg:flex-row lg:items-center lg:justify-between">
+    <div className="flex flex-col gap-3 px-panel py-4 lg:flex-row lg:items-start lg:justify-between">
       <div className="w-full lg:max-w-md">
         <SearchInput
           value={searchTerm}
@@ -58,6 +68,7 @@ export const StudentRegisterToolbar = ({
           <Select
             aria-label="Sort students"
             value={query.sort}
+            isActive={query.sort !== SORT_OPTIONS[0].value}
             onChange={(event) => onFilterChange({ sort: event.target.value })}
             className="h-10 w-full text-label sm:w-[11rem]"
           >
@@ -93,12 +104,20 @@ export const StudentRegisterToolbar = ({
           <SlidersHorizontal className="size-3.5" aria-hidden="true" />
         </span>
         <span className="eyebrow">Narrow the register</span>
+        {activeFilterCount > 0 ? (
+          <span className="rounded-full border border-beige-strong/60 bg-beige/60 px-2 py-0.5 text-micro font-semibold tracking-normal text-charcoal">
+            {activeFilterCount} active
+          </span>
+        ) : null}
+
+        {isUpdating ? <Spinner label="Updating results…" className="ml-1 text-muted" /> : null}
       </div>
 
       <div className="flex flex-wrap items-center gap-2">
         <Select
           aria-label="Filter by enrollment status"
           value={query.status}
+          isActive={Boolean(query.status)}
           onChange={(event) => onFilterChange({ status: event.target.value })}
           className={FILTER_CLASS}
         >
@@ -113,6 +132,7 @@ export const StudentRegisterToolbar = ({
         <Select
           aria-label="Filter by year"
           value={query.year}
+          isActive={Boolean(query.year)}
           onChange={(event) => onFilterChange({ year: event.target.value })}
           className={FILTER_CLASS}
         >
@@ -127,6 +147,7 @@ export const StudentRegisterToolbar = ({
         <Select
           aria-label="Filter by department"
           value={query.department}
+          isActive={Boolean(query.department)}
           onChange={(event) => onFilterChange({ department: event.target.value })}
           className={FILTER_CLASS}
         >
@@ -141,6 +162,7 @@ export const StudentRegisterToolbar = ({
         <Select
           aria-label="Filter by course"
           value={query.course}
+          isActive={Boolean(query.course)}
           onChange={(event) => onFilterChange({ course: event.target.value })}
           className={FILTER_CLASS}
         >
@@ -152,6 +174,12 @@ export const StudentRegisterToolbar = ({
           ))}
         </Select>
       </div>
+
+      <p className="text-meta leading-relaxed text-muted lg:sr-only">
+        {isFiltered
+          ? 'Changing a filter, the sort or the page size starts again at page 1.'
+          : 'Courses and departments are read from the register itself.'}
+      </p>
     </div>
   </div>
 );

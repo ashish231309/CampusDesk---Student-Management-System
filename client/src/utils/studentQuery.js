@@ -90,18 +90,26 @@ export const hasInvalidListParams = (searchParams) => {
   return cleaned.toString() !== new URLSearchParams(searchParams).toString();
 };
 
-/** Labels for the active-filter chips, in the order the controls appear. */
-export const describeActiveFilters = (query) => {
-  const sortLabel = SORT_OPTIONS.find((option) => option.value === query.sort)?.label;
-
-  return [
+/**
+ * Labels for the chips that say what is *narrowing* the register, in the order
+ * the controls appear. Sorting is deliberately not one of them: it changes how
+ * the same students are presented rather than which students they are, so it has
+ * its own chip (`describeActiveSort`) and the count beside this list is a count
+ * of filters, which is what the user is being told.
+ */
+export const describeActiveFilters = (query) =>
+  [
     query.search && { key: 'search', label: `Search: ${query.search}` },
     query.status && { key: 'status', label: `Status: ${query.status === 'active' ? 'Active' : 'Inactive'}` },
     query.year && { key: 'year', label: query.year },
     query.department && { key: 'department', label: query.department },
     query.course && { key: 'course', label: query.course },
-    sortLabel && query.sort !== LIST_DEFAULTS.sort && { key: 'sort', label: `Sort: ${sortLabel}` },
   ].filter(Boolean);
+
+/** The sort as a chip, when it is not the register's default order. */
+export const describeActiveSort = (query) => {
+  const label = SORT_OPTIONS.find((option) => option.value === query.sort)?.label;
+  return label && query.sort !== LIST_DEFAULTS.sort ? { key: 'sort', label } : null;
 };
 
 /** Any state that narrows or reorders the register. */

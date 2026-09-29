@@ -1952,7 +1952,7 @@ await check('the register URL omits defaults and keeps what matters', () => {
 });
 
 await check('active filters are described for the chips', () => {
-  const { describeActiveFilters, hasActiveListParams } = clientBundle.loaded.studentQuery;
+  const { describeActiveFilters, describeActiveSort, hasActiveListParams } = clientBundle.loaded.studentQuery;
 
   const filters = describeActiveFilters({
     search: 'ashish',
@@ -1967,8 +1967,13 @@ await check('active filters are described for the chips', () => {
 
   const keys = filters.map((filter) => filter.key);
   assert(keys.includes('search') && keys.includes('status') && keys.includes('year'), 'the narrowing filters should be listed');
-  assert(keys.includes('sort'), 'a non-default sort should be listed');
+  assert(!keys.includes('sort'), 'sorting is not a filter and is not counted as one');
   assert(!keys.includes('course'), 'an unused filter should not be listed');
+  assert(
+    describeActiveSort({ sort: 'name' })?.label === 'Name A–Z' &&
+      describeActiveSort({ sort: '-dateOfRegistration' }) === null,
+    'the sort is described separately, and only when it is not the default order',
+  );
   assert(hasActiveListParams({ search: '', sort: '-dateOfRegistration', page: 1, limit: 10 }) === false, 'defaults are not filters');
   assert(hasActiveListParams({ search: 'x', sort: '-dateOfRegistration', page: 1, limit: 10 }) === true, 'a search is a filter');
 });
@@ -3372,6 +3377,285 @@ await check('list interaction, search feedback and recovery stay in the establis
 });
 
 // ---------------------------------------------------------------------------
+section('Dashboard, search & filtering experience (static)');
+// ---------------------------------------------------------------------------
+
+await check('the statistics endpoint stays the only source of dashboard numbers', () => {
+  const summary = sourceOf('hooks/useDashboardSummary.js');
+  const service = sourceOf('services/studentService.js');
+  const page = sourceOf('pages/DashboardPage.jsx');
+
+  assert(summary.includes('studentService') && summary.includes('.stats('), 'the summary hook reads the statistics endpoint');
+  assert(!summary.includes('.list('), 'the dashboard must never read the register to count it');
+  assert(
+    (clientSource.replace(/\/\*[\s\S]*?\*\//g, '').match(/\/students\/stats/g) ?? []).length === 1,
+    'the statistics path should appear in exactly one place — the service',
+  );
+  assert(service.includes("stats: (options) => api.get('/students/stats'"), 'and that place is studentService');
+  assert(
+    !page.includes('studentService') && !/\bfetch\(/.test(page),
+    'the dashboard page itself does not fetch anything',
+  );
+  assert(
+    !/byDepartment[\s\S]{0,80}\.length\s*\+/.test(page) && !page.includes('students.length'),
+    'nothing on the dashboard counts rows to produce a figure',
+  );
+  assert(!/setInterval|WebSocket|EventSource/.test(clientSource), 'statistics are not kept fresh by polling or a socket');
+});
+
+await check('statistics stay fresh through the existing change announcement', () => {
+  const summary = sourceOf('hooks/useDashboardSummary.js');
+  const service = sourceOf('services/studentService.js');
+  const list = sourceOf('hooks/useStudentList.js');
+
+  assert(summary.includes('onStudentsChanged(refresh)'), 'the dashboard refreshes when a student changes');
+  assert(list.includes('onStudentsChanged(refresh)'), 'and so does an open register');
+  assert(
+    (service.match(/announceChange\(\)/g) ?? []).length === 3,
+    'create, update and delete are the three things that announce a change',
+  );
+  assert(
+    !service.includes('changeListeners.forEach') || service.includes('const announceChange'),
+    'there is still exactly one announcement mechanism',
+  );
+});
+
+await check('dashboard figures are the API fields, described honestly', () => {
+  const page = sourceOf('pages/DashboardPage.jsx');
+  const summary = sourceOf('hooks/useDashboardSummary.js');
+
+  for (const field of ['total', 'active', 'inactive', 'departmentCount', 'byDepartment', 'byYear', 'recent']) {
+    assert(page.includes(`summary.${field}`), `the dashboard should render ${field}`);
+    assert(summary.includes(`${field}:`) || summary.includes(field), `${field} should come from the API payload`);
+  }
+  assert(
+    summary.includes('recentRegistrations'),
+    'recent registrations come from the statistics payload, not a second request',
+  );
+  assert(
+    !/\b(trend|growth|last (?:month|week|year)|vs\.? (?:last|previous)|increase|decrease)\b/i.test(page),
+    'no growth, trend or period comparison is claimed — the API supplies none',
+  );
+  assert(
+    !/Math\.round\(\s*\(?\s*summary\.(?:active|inactive)\s*\/\s*summary\.total/.test(page),
+    'no percentage is derived from the counts and presented as a statistic',
+  );
+  assert(
+    page.includes('Records whose status is active') && page.includes('Records whose status is inactive'),
+    'each figure says what it counts',
+  );
+  assert(
+    page.includes('The five newest records, by date of registration.'),
+    'recent is defined in words',
+  );
+  assert(
+    page.includes('Status controls whether a student is counted in active enrolment figures.'),
+    'and what enrollment status changes is explained where the split is shown',
+  );
+
+  // The wording has to match what the API actually does.
+  const server = readFileSync(new URL('../src/services/studentService.js', import.meta.url), 'utf8');
+  assert(
+    /\$sort:\s*\{\s*dateOfRegistration:\s*-1\s*,\s*createdAt:\s*-1\s*\}/.test(server) &&
+      /\$limit:\s*5\b/.test(server),
+    'the statistics endpoint really returns the five newest by registration date',
+  );
+});
+
+await check('every dashboard figure is a way into the register, using canonical query state', () => {
+  const page = sourceOf('pages/DashboardPage.jsx');
+  const paths = sourceOf('routes/paths.js');
+
+  assert(
+    paths.includes('readStudentListQuery') &&
+      paths.includes('writeStudentListQuery') &&
+      paths.includes('studentRegisterHref'),
+    'dashboard links are built by the register\'s own reader and writer, not a second format',
+  );
+  assert(
+    page.includes('studentRegisterHref({ status: ') &&
+      page.includes('studentRegisterHref({ department: ') &&
+      page.includes('studentRegisterHref({ year: '),
+    'the status, department and year figures open the register already narrowed',
+  );
+  assert(
+    (page.match(/studentRegisterHref\(/g) ?? []).length >= 5,
+    'the cards, the distribution rows and the status rows all link through it',
+  );
+  assert(
+    page.includes('toLabel=') || page.includes('sr-only'),
+    'a card link says where it goes for anyone who cannot see the arrow',
+  );
+  assert(
+    !page.includes('?status=') && !page.includes('?department='),
+    'no query string is hand-written anywhere on the dashboard',
+  );
+});
+
+await check('the dashboard distinguishes loading, refreshing, empty and failed', () => {
+  const page = sourceOf('pages/DashboardPage.jsx');
+  const summary = sourceOf('hooks/useDashboardSummary.js');
+
+  assert(summary.includes('isLoading: !statistics && !loadError'), 'a first load with nothing to show is loading');
+  assert(
+    summary.includes('isRefreshing: !isCurrent && Boolean(statistics)'),
+    'a later load keeps the real numbers and reports that it is refreshing instead',
+  );
+  assert(summary.includes('setLastGood(stats)') && summary.includes('?? lastGood'), 'the numbers shown while refreshing are the last real ones');
+  const errorBranch = page.slice(page.indexOf('summary.isError'), page.indexOf('<ErrorState'));
+  assert(
+    errorBranch.length > 0 && errorBranch.length < 1200,
+    'a failed summary explains itself rather than drawing a register of zero',
+  );
+  assert(page.includes('onRetry={summary.refresh}'), 'and offers a retry that re-runs the same request');
+  assert(
+    /summary\.isError \? \([\s\S]*?\) : \(/.test(page),
+    'the summary sections sit in the branch that runs when there is no error',
+  );
+  assert(!page.includes('value={0}'), 'no figure is hard-coded');
+  assert(
+    page.includes('No students yet') && page.includes('Add the first student'),
+    'an empty register says so and offers the action that fills it',
+  );
+  assert(
+    page.includes('aria-busy={summary.isLoading || summary.isRefreshing') && page.includes('Updating figures…'),
+    'a refresh is announced and visible, not silent',
+  );
+  assert(
+    !/0 (?:students|departments)/.test(page),
+    'the empty wording comes from the counts, never from a literal zero',
+  );
+});
+
+await check('the register says what is on screen, from the API\'s own metadata', () => {
+  const pagination = sourceOf('components/ui/Pagination.jsx');
+  const page = sourceOf('pages/StudentsPage.jsx');
+
+  assert(
+    /Page <span[\s\S]{0,120}?of\{' '\}[\s\S]{0,200}?formatCount\(totalPages\)/.test(pagination),
+    'the current page and the number of pages are both spelled out',
+  );
+  assert(
+    pagination.includes("isFiltered ? 'matching students' : 'students'"),
+    'a filtered result is described as matching rather than as the whole register',
+  );
+  assert(
+    !/items\.length|rows\.length/.test(pagination),
+    'the counts come from the API metadata, never from the rows on screen',
+  );
+  assert(
+    page.includes('isFiltered={register.isFiltered}'),
+    'the register tells the count which of the two sentences applies',
+  );
+  assert(
+    page.includes('total={register.meta.total}') && page.includes('page={register.meta.page}'),
+    'page and total are the API\'s, not a local calculation',
+  );
+});
+
+await check('filters advertise themselves and say how many are narrowing the register', () => {
+  const toolbar = sourceOf('components/students/StudentRegisterToolbar.jsx');
+  const chips = sourceOf('components/students/ActiveFilterChips.jsx');
+  const controller = sourceOf('hooks/useStudentRegister.js');
+  const field = sourceOf('components/ui/Field.jsx');
+  const query = sourceOf('utils/studentQuery.js');
+
+  assert(
+    (toolbar.match(/isActive=\{/g) ?? []).length >= 5 && field.includes('isActive'),
+    'each narrowing control shows that it is narrowing something',
+  );
+  assert(
+    controller.includes('const activeFilters = describeActiveFilters(query)') &&
+      controller.includes('activeFilterCount: activeFilters.length,'),
+    'the count of active filters is the length of the canonical filter list',
+  );
+  assert(
+    controller.includes('describeActiveSort(query)') && query.includes('describeActiveSort'),
+    'and a non-default sort is described separately from the filters',
+  );
+  assert(
+    chips.includes('Sorted by: {sort.label}') && chips.includes('aria-label={`Reset sorting'),
+    'the chips row shows the sort as sorting, with its own way back to the default order',
+  );
+  assert(
+    toolbar.includes('Narrow the register') && toolbar.includes('aria-label="Filter by status') === false,
+    'the filter group keeps its heading',
+  );
+  assert(chips.includes("{filters.length === 1 ? 'filter' : 'filters'}"), 'the chips row counts what is applied');
+  assert(chips.includes('Clear all filters'), 'and offers one clear action');
+  assert(
+    chips.includes('aria-label={`Remove filter: ${filter.label}`}'),
+    'each chip removes only itself, and says which filter it removes',
+  );
+  assert(
+    controller.includes('applyQuery({ [key]: key === \'sort\' ? DEFAULT_SORT : \'\' })'),
+    'removing a chip patches one key and leaves the rest of the query alone',
+  );
+  assert(
+    controller.includes('const next = { ...query, ...patch }'),
+    'every change is a merge into the current query, so unrelated state survives',
+  );
+  assert(
+    toolbar.includes('Changing a filter, the sort or the page size starts again at page 1.'),
+    'the interface says what changing the query does to the page',
+  );
+});
+
+await check('search keeps its Stage 05 semantics and its Stage 08 feedback', () => {
+  const controller = sourceOf('hooks/useStudentRegister.js');
+  const search = sourceOf('components/ui/SearchInput.jsx');
+  const toolbar = sourceOf('components/students/StudentRegisterToolbar.jsx');
+
+  assert(controller.includes('SEARCH_DEBOUNCE_MS = 320'), 'the debounce is still 320 ms');
+  assert(
+    controller.includes('const isSearching = isLoading && Boolean(query.search);'),
+    'only a search makes the search box busy',
+  );
+  assert(
+    controller.includes('isUpdating') && sourceOf('hooks/useStudentList.js').includes('isUpdating'),
+    'a filter, sort or page change is reported as an update to the results, separately',
+  );
+  assert(
+    search.includes('aria-busy={isBusy || undefined}') && search.includes('value'),
+    'the field announces its own busy state and stays a controlled input',
+  );
+  assert(
+    toolbar.includes('Matches part of a word, and every word has to match something') &&
+      toolbar.includes('kumar cse'),
+    'the interface still explains how multi-term search works',
+  );
+  assert(
+    toolbar.includes('Search name, ID, email or phone') && toolbar.includes('isBusy={isSearching}'),
+    'and what it searches, with the busy state wired in',
+  );
+  assert(
+    controller.includes('committedSearch') && controller.includes('useDebouncedValue(searchTerm, SEARCH_DEBOUNCE_MS)'),
+    'the debounce still commits through the URL rather than a local result set',
+  );
+});
+
+await check('page, sort and page size stay allowlisted, server-driven and never stranded', () => {
+  const controller = sourceOf('hooks/useStudentRegister.js');
+  const query = sourceOf('utils/studentQuery.js');
+  const service = sourceOf('services/studentService.js');
+  const constants = sourceOf('constants/student.js');
+
+  assert(constants.includes('PAGE_SIZE_OPTIONS') && query.includes('PAGE_SIZE_OPTIONS.includes(limit)'), 'page size is restricted to the allowlist');
+  assert(query.includes('SORT_OPTIONS.map((option) => option.value)') && query.includes('oneOf('), 'sort is restricted to the allowlist');
+  assert(service.includes('page: query.page') && service.includes('limit: query.limit'), 'paging is sent to the API, not applied to rows');
+  assert(
+    !/slice\(\s*\(?\s*page/.test(controller) && !/slice\(\s*\(?\s*page/.test(sourceOf('pages/StudentsPage.jsx')),
+    'nothing slices a result set into pages on the client',
+  );
+  assert(controller.includes('if (patch.page === undefined) next.page = 1;'), 'any change other than the page itself returns to page 1');
+  assert(controller.includes('query.page > meta.totalPages'), 'a page past the end steps back to the last real page after a delete');
+  assert(
+    controller.includes('if (hasInvalidListParams(searchParams))'),
+    'a hand-edited query self-corrects through the canonical writer',
+  );
+});
+
+// ---------------------------------------------------------------------------
 section('Route rendering (real components, rendered in Node — no browser)');
 // ---------------------------------------------------------------------------
 
@@ -3636,6 +3920,118 @@ await check('editing presents the registration date according to the role, and h
 
   assert(Boolean(adminDate) && !isDisabled(adminDate), 'an administrator is offered the field the API lets them change');
   assert(!admin.includes('only an administrator can change it'), 'and needs no explanation');
+});
+
+// ---------------------------------------------------------------------------
+section('Register state & dashboard rendering (real components, rendered in Node — no browser)');
+// ---------------------------------------------------------------------------
+
+/**
+ * The canonical query writer is bundled and run here, so "a dashboard link is
+ * exactly the URL the register would have produced" is decided by the code the
+ * browser runs rather than by reading it.
+ */
+const hrefBundle = await bundleClient({ paths: 'routes/paths.js' }, { baseUrl: `${stubUrl}/api` });
+const { studentRegisterHref } = hrefBundle.loaded.paths;
+
+await check('dashboard links are canonical register URLs, and hostile input is dropped', () => {
+  assert(studentRegisterHref() === declaredPaths.students, 'a plain link is the register itself');
+  assert(
+    studentRegisterHref({ status: 'active' }) === `${declaredPaths.students}?status=active`,
+    'a status figure links to the canonical status filter',
+  );
+  assert(
+    studentRegisterHref({ department: 'Computer Science' }) ===
+      `${declaredPaths.students}?department=Computer+Science`,
+    'a department is encoded the way the register encodes it',
+  );
+  assert(
+    studentRegisterHref({ year: '3rd Year' }) === `${declaredPaths.students}?year=3rd+Year`,
+    'and so is a year of study',
+  );
+  assert(
+    studentRegisterHref({ sort: '-dateOfRegistration', limit: 10, page: 1 }) === declaredPaths.students,
+    'defaults stay out of the URL, exactly as the register writes them',
+  );
+  assert(
+    studentRegisterHref({ search: 'kumar', department: 'CSE', status: 'active', page: 2 }) ===
+      `${declaredPaths.students}?search=kumar&status=active&department=CSE&page=2`,
+    'a combined state round-trips in the register\'s own parameter order',
+  );
+  assert(
+    studentRegisterHref({ status: 'pending', year: '9th Year', sort: 'passwordHash', page: 'abc', limit: 100000 }) ===
+      declaredPaths.students,
+    'values the register would refuse are never written into a link',
+  );
+
+  hrefBundle.cleanup();
+});
+
+await check('a filtered URL renders the same state it describes', async () => {
+  const plain = await renderSignedIn(declaredPaths.students, 'students');
+  assert(!plain.includes('Filtering by'), 'an unfiltered register shows no filter bar');
+  assert(!plain.includes('No students match'), 'and claims nothing about matches it has not read');
+  assert(
+    plain.includes('Matches part of a word, and every word has to match something'),
+    'the search explanation is part of the register, filtered or not',
+  );
+
+  const filtered = await renderSignedIn(
+    `${declaredPaths.students}?search=kumar&department=CSE&status=active&year=3rd+Year&page=2&sort=name`,
+    'students',
+  );
+
+  assert(filtered.includes('Filtering by'), 'a filtered register says so');
+  assert(/4[\s\S]{0,24}filters/.test(filtered), 'and counts the filters, not the sorting');
+  assert(
+    filtered.includes('Sorted by:') && filtered.includes('Name A–Z'),
+    'a non-default sort is shown as sorting, in its own chip',
+  );
+  assert(
+    (filtered.match(/aria-label="Reset sorting/g) ?? []).length === 1,
+    'and can be put back to the default without touching a filter',
+  );
+  for (const chip of ['Search: kumar', 'Status: Active', '3rd Year', 'CSE']) {
+    assert(filtered.includes(chip), `the ${chip} filter should be shown as active`);
+  }
+  assert(filtered.includes('Clear all filters'), 'with one action to lift them all');
+  assert(
+    (filtered.match(/aria-label="Remove filter:/g) ?? []).length === 4 &&
+      (filtered.match(/aria-label="Reset sorting/g) ?? []).length === 1,
+    'every chip can be removed on its own',
+  );
+  assert(filtered.includes('value="kumar"'), 'the search box shows the search from the URL');
+
+  const clean = await renderSignedIn(`${declaredPaths.students}?search=kumar&department=CSE`, 'students');
+  assert(
+    (clean.match(/aria-label="Remove filter:/g) ?? []).length === 2 &&
+      !clean.includes('Status: Active') &&
+      !clean.includes('Sorted by:'),
+    'a two-filter URL produces two chips, no sort chip and nothing else',
+  );
+});
+
+await check('the dashboard renders as a summary that is still being read, never as zeros', async () => {
+  const dashboard = await renderSignedIn(declaredPaths.dashboard, 'dashboard');
+
+  assert(dashboard.includes('Register at a glance'), 'the summary band renders');
+  assert(dashboard.includes('Reading the register…'), 'and says it is still reading the register');
+  assert(
+    [...dashboard.matchAll(/<h1[^>]*>/g)].length === 1,
+    'the dashboard keeps exactly one page heading',
+  );
+  assert(dashboard.includes('aria-busy="true"'), 'the summary reports that it is busy');
+  assert(dashboard.includes('animate-pulse'), 'the figures wait as skeletons rather than as zeroes');
+  assert(!dashboard.includes('0 students on CampusDesk'), 'no figure is invented before the API answers');
+  assert(
+    dashboard.includes('Students on register') === false,
+    'the cards themselves wait for real numbers instead of rendering zero',
+  );
+
+  for (const panel of ['Recent registrations', 'Enrollment by department', 'Students by year of study', 'Active and inactive']) {
+    assert(dashboard.includes(panel), `${panel} should be part of the dashboard`);
+  }
+  assert(dashboard.includes('The five newest records, by date of registration.'), 'the recent list explains what recent means');
 });
 
 ssrBundle.cleanup();

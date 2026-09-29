@@ -10,6 +10,7 @@ import { errorMessage } from '../utils/apiErrors.js';
 import { DEFAULT_SORT } from '../constants/student.js';
 import {
   describeActiveFilters,
+  describeActiveSort,
   hasActiveListParams,
   hasInvalidListParams,
   readStudentListQuery,
@@ -50,7 +51,8 @@ export const useStudentRegister = () => {
   const [deleteTarget, setDeleteTarget] = useState(null);
   const [isDeleting, setIsDeleting] = useState(false);
 
-  const { items, meta, status, error, errorKind, isLoading, refresh } = useStudentList(query);
+  const { items, meta, status, error, errorKind, isLoading, isUpdating, refresh } =
+    useStudentList(query);
   const options = useStudentFilters();
 
   /**
@@ -152,6 +154,11 @@ export const useStudentRegister = () => {
 
   const isFiltered = hasActiveListParams(query);
 
+  const activeFilters = describeActiveFilters(query);
+
+  /** A non-default sort travels with the chips, but is not counted as a filter. */
+  const activeSort = describeActiveSort(query);
+
   /**
    * True while the register is answering a *search* — the state the search field
    * reports on itself. A page change or a filter is visible in the table's own
@@ -171,7 +178,10 @@ export const useStudentRegister = () => {
   if (status === 'error') {
     resultSummary = 'The register could not be loaded.';
   } else if (isLoading) {
-    resultSummary = 'Loading students.';
+    // Announced once, for the first load. A later query change is already
+    // reported by the busy results region, and repeating it on every keystroke
+    // would talk over the answer the user is waiting for.
+    resultSummary = isUpdating ? '' : 'Loading students.';
   } else if (status === 'ready' && meta && meta.total === 0) {
     resultSummary = isFiltered
       ? 'No students match the current search and filters.'
@@ -190,10 +200,13 @@ export const useStudentRegister = () => {
     error,
     errorKind,
     isLoading,
+    isUpdating,
     refresh,
     isFiltered,
+    activeFilters,
+    activeFilterCount: activeFilters.length,
+    activeSort,
     resultSummary,
-    activeFilters: describeActiveFilters(query),
     applyQuery,
     removeFilter,
     clearFilters,

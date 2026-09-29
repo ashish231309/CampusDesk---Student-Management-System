@@ -177,4 +177,38 @@ later stages, and database-backed verification wherever MongoDB is available.
   screens in Node — the sign-in screen with an expired session, the create form's
   sections and labels, and the edit form for staff versus an administrator
 
-## Stage 09 — Dashboard, search & filtering experience  ⏳
+## Stage 09 — Dashboard, search & filtering experience  ✅
+
+- Every dashboard figure is now a way in: the stat cards, the department rows,
+  the year rows and the status rows link into the register already narrowed to
+  the students they describe, built through the register's own reader and writer
+  so a link can never carry a filter value, page size or sort the API would refuse
+- The dashboard no longer derives anything it was not given: the "share of the
+  register" percentage and the percentage claim in the status bar are gone, each
+  figure says what it counts, and no growth or trend is implied
+- A summary that could not be read is no longer drawn as a register of zero: the
+  failure explains itself with a retry, and the figures are withheld
+- A refresh after a create, edit or delete keeps the last real numbers on screen
+  and reports "Updating figures…" instead of throwing the dashboard back to
+  skeletons; the first load still shows skeletons
+- The dashboard gained the year-of-study breakdown the statistics endpoint
+  already returns, and the department and year lists scroll, so a register with
+  many departments stays readable
+- The register now answers "what am I looking at": the pagination line reads
+  "Page 2 of 5 · Showing 26–50 of 124 matching students", with "matching" chosen
+  from the URL state and every figure taken from the API's own metadata
+- Filters and sorting are no longer mixed together: the chip row lists the
+  narrowing filters with a count of them, and a non-default sort has its own chip
+  with its own way back to the default order
+- Each narrowing control shows that it is narrowing something, a filter or page
+  change reports "Updating results…" separately from the search box being busy,
+  and the interface says that changing the query starts again at page 1
+- `npm run verify` grew to 169 checks: nine static dashboard/filter checks (one
+  statistics source, the announcement refresh, honest figures, canonical links,
+  the four dashboard states, results read from API metadata, filter discovery,
+  search semantics, page/sort allowlists) and three that render real components
+  in Node — canonical link building including hostile input, a filtered URL
+  producing exactly the chips and sort chip it describes, and the dashboard
+  rendering as a summary still being read rather than as zeros
+
+## Stage 10 — GSAP/Motion animations & interactive UX  ⏳

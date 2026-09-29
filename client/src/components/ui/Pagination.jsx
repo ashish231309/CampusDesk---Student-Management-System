@@ -32,7 +32,24 @@ const StepButton = ({ icon: Icon, label, onClick, disabled }) => (
   </button>
 );
 
-export const Pagination = ({ page = 1, totalPages = 1, total = 0, limit = 10, onPageChange, className }) => {
+/**
+ * Where the user is in the result — the one place the count, the page and the
+ * page size are spelled out, so the register never repeats the same numbers in
+ * two places. `isFiltered` only changes the wording: with filters or a search
+ * applied, "24 matching students" is a more honest sentence than "24 students",
+ * and it is a reminder that a subset is on screen.
+ *
+ * Every figure comes from the API's own `meta`; nothing here counts rows.
+ */
+export const Pagination = ({
+  page = 1,
+  totalPages = 1,
+  total = 0,
+  limit = 10,
+  isFiltered = false,
+  onPageChange,
+  className,
+}) => {
   const first = total === 0 ? 0 : (page - 1) * limit + 1;
   const last = Math.min(page * limit, total);
 
@@ -44,10 +61,20 @@ export const Pagination = ({ page = 1, totalPages = 1, total = 0, limit = 10, on
         className,
       )}
     >
-      <p className="text-label text-muted" aria-live="polite">
+      <p className="text-label text-muted">
+        {totalPages > 1 ? (
+          <>
+            Page <span className="font-semibold text-ink">{page}</span> of{' '}
+            <span className="font-semibold text-ink">{formatCount(totalPages)}</span>
+            <span className="px-1.5 text-line-strong" aria-hidden="true">
+              ·
+            </span>
+          </>
+        ) : null}
         Showing <span className="font-semibold text-ink">{first}</span>–
         <span className="font-semibold text-ink">{last}</span> of{' '}
-        <span className="font-semibold text-ink">{formatCount(total)}</span> students
+        <span className="font-semibold text-ink">{formatCount(total)}</span>{' '}
+        {isFiltered ? 'matching students' : 'students'}
       </p>
 
       {totalPages > 1 ? (

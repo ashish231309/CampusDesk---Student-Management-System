@@ -54,6 +54,9 @@ export default function StudentsPage() {
           query={register.query}
           searchTerm={register.searchTerm}
           isSearching={register.isSearching}
+          isUpdating={register.isUpdating}
+          isFiltered={register.isFiltered}
+          activeFilterCount={register.activeFilterCount}
           onSearchChange={register.setSearchTerm}
           onSearchClear={() => register.setSearchTerm('')}
           options={register.options}
@@ -62,6 +65,7 @@ export default function StudentsPage() {
 
         <ActiveFilterChips
           filters={register.activeFilters}
+          sort={register.activeSort}
           onRemove={register.removeFilter}
           onClearAll={register.clearFilters}
         />
@@ -100,6 +104,7 @@ export default function StudentsPage() {
                 totalPages={register.meta.totalPages}
                 total={register.meta.total}
                 limit={register.meta.limit}
+                isFiltered={register.isFiltered}
                 onPageChange={(page) => register.applyQuery({ page })}
               />
             ) : null}

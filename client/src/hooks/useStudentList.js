@@ -31,6 +31,13 @@ export const useStudentList = (query = {}) => {
   const requestKey = JSON.stringify(filter);
   const [result, setResult] = useState({ key: null, status: 'ready', students: [], meta: null, error: null });
   const [reloadToken, setReloadToken] = useState(0);
+  /**
+   * The last query this hook managed to answer. Once there is one, a later load
+   * is an *update* to a register the user has already seen rather than the first
+   * look at it — which is the difference between a page that fills in and a page
+   * that briefly looks empty every time a filter changes.
+   */
+  const [answeredKey, setAnsweredKey] = useState(null);
 
   const refresh = useCallback(() => setReloadToken((token) => token + 1), []);
 
@@ -43,6 +50,7 @@ export const useStudentList = (query = {}) => {
       .then(({ students, meta }) => {
         if (active) {
           setResult({ key: requestKey, status: 'ready', students, meta, error: null });
+          setAnsweredKey(requestKey);
         }
       })
       .catch((error) => {
@@ -71,11 +79,13 @@ export const useStudentList = (query = {}) => {
       meta: isCurrent ? result.meta : null,
       status: isCurrent ? result.status : 'loading',
       isLoading: !isCurrent && !loadError,
+      // A query change on a register that has already loaded at least once.
+      isUpdating: !isCurrent && !loadError && answeredKey !== null,
       error: loadError,
       // `kind` lets the page choose between "no results" and "could not load".
       errorKind: loadError ? describeLoadError(loadError).kind : null,
       isFiltered: Boolean(search || status || year || department || course),
       refresh,
     };
-  }, [course, department, isCurrent, refresh, result, search, status, year]);
+  }, [answeredKey, course, department, isCurrent, refresh, result, search, status, year]);
 };

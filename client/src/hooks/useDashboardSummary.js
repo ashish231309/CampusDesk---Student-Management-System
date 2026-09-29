@@ -12,6 +12,20 @@ const EMPTY = {
   recent: [],
 };
 
+/** Reshape the API's statistics payload into what the cards read. */
+const readStats = (stats) => ({
+  total: stats.total,
+  active: stats.active,
+  inactive: stats.inactive,
+  departmentCount: stats.byDepartment?.length ?? 0,
+  byDepartment: (stats.byDepartment ?? []).map((row) => ({
+    label: row.department,
+    count: row.count,
+  })),
+  byYear: (stats.byYear ?? []).map((row) => ({ label: row.year, count: row.count })),
+  recent: stats.recentRegistrations ?? [],
+});
+
 /**
  * Dashboard summary, straight from `GET /api/students/stats`.
  *
@@ -20,12 +34,19 @@ const EMPTY = {
  * reshaped into the `{ label, count }` the cards read, and the department count
  * comes from the distribution rather than a second request.
  *
- * The payload is tagged with the reload it belongs to, so a refresh shows the
- * loading state again without writing state synchronously inside the effect.
+ * Two things are kept apart on purpose, because they read very differently:
+ *
+ *  - the *first* load has nothing to show, so it is `isLoading` and the panels
+ *    draw skeletons;
+ *  - a later load — after a student was created, edited or deleted — has real
+ *    numbers already, so it keeps them on screen and reports `isRefreshing`
+ *    instead. The figures are the last ones the API gave, never a guess, and the
+ *    region is marked busy while the new ones are on their way.
  */
 export const useDashboardSummary = () => {
   const [reloadToken, setReloadToken] = useState(0);
   const [state, setState] = useState({ token: null, status: 'loading', stats: null, error: null });
+  const [lastGood, setLastGood] = useState(null);
 
   const refresh = useCallback(() => setReloadToken((token) => token + 1), []);
 
@@ -36,7 +57,9 @@ export const useDashboardSummary = () => {
     studentService
       .stats({ signal: controller.signal })
       .then((stats) => {
-        if (active) setState({ token: reloadToken, status: 'ready', stats, error: null });
+        if (!active) return;
+        setState({ token: reloadToken, status: 'ready', stats, error: null });
+        setLastGood(stats);
       })
       .catch((error) => {
         if (active && !error.isCancelled) {
@@ -55,30 +78,21 @@ export const useDashboardSummary = () => {
   useEffect(() => onStudentsChanged(refresh), [refresh]);
 
   const isCurrent = state.token === reloadToken;
-  const stats = isCurrent ? state.stats : null;
+  const statistics = (isCurrent ? state.stats : null) ?? lastGood;
   const loadError = isCurrent ? state.error : null;
 
   return {
     ...EMPTY,
-    ...(stats
-      ? {
-          total: stats.total,
-          active: stats.active,
-          inactive: stats.inactive,
-          departmentCount: stats.byDepartment?.length ?? 0,
-          byDepartment: (stats.byDepartment ?? []).map((row) => ({
-            label: row.department,
-            count: row.count,
-          })),
-          byYear: (stats.byYear ?? []).map((row) => ({ label: row.year, count: row.count })),
-          recent: stats.recentRegistrations ?? [],
-        }
-      : {}),
-    status: isCurrent ? state.status : 'loading',
+    ...(statistics ? readStats(statistics) : {}),
+    status: isCurrent ? state.status : statistics ? 'ready' : 'loading',
     error: loadError,
     errorKind: loadError ? describeLoadError(loadError).kind : null,
-    isLoading: !isCurrent,
+    // Nothing on screen yet; the panels show their skeletons.
+    isLoading: !statistics && !loadError,
+    // Real numbers are on screen while newer ones are being read.
+    isRefreshing: !isCurrent && Boolean(statistics),
     isError: isCurrent && state.status === 'error',
+    hasData: Boolean(statistics),
     refresh,
   };
 };

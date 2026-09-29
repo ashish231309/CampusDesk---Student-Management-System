@@ -6,13 +6,17 @@ import { cx } from '../../utils/cx.js';
 const baseControl =
   'w-full rounded-field border bg-surface px-3.5 text-ink transition-[border-color,box-shadow,background-color] duration-150 placeholder:text-muted/70 hover:border-line-strong focus:outline-none focus-visible:border-charcoal focus-visible:ring-2 focus-visible:ring-charcoal/18 disabled:cursor-not-allowed disabled:border-line/70 disabled:bg-canvas disabled:text-muted';
 
-const controlClasses = ({ hasError, className } = {}) =>
+const controlClasses = ({ hasError, isActive, className } = {}) =>
   cx(
     baseControl,
     'text-body',
     hasError
       ? 'border-danger focus-visible:border-danger focus-visible:ring-danger/18'
-      : 'border-line',
+      : isActive
+        ? // A control that is currently narrowing the register says so at a
+          // glance, without relying on the value being read closely.
+          'border-beige-strong bg-beige/25 font-semibold hover:border-charcoal/40'
+        : 'border-line',
     className,
   );
 
@@ -80,14 +84,14 @@ export const TextInput = forwardRef(function TextInput({ hasError, className, ..
 });
 
 export const Select = forwardRef(function Select(
-  { hasError, className, children, ...rest },
+  { hasError, isActive = false, className, children, ...rest },
   ref,
 ) {
   return (
     <div className="relative">
       <select
         ref={ref}
-        className={cx(controlClasses({ hasError }), 'h-11 appearance-none pr-10', className)}
+        className={cx(controlClasses({ hasError, isActive }), 'h-11 appearance-none pr-10', className)}
         {...rest}
       >
         {children}

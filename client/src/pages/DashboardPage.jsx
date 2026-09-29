@@ -3,6 +3,7 @@ import {
   ArrowUpRight,
   Building2,
   CalendarCheck,
+  CalendarRange,
   GraduationCap,
   Layers,
   UserPlus,
@@ -18,12 +19,13 @@ import { Card, CardHeader } from '../components/ui/Card.jsx';
 import { DataTable } from '../components/ui/DataTable.jsx';
 import { EmptyState, ErrorState } from '../components/ui/States.jsx';
 import { Skeleton, StatCardSkeleton } from '../components/ui/Skeleton.jsx';
+import { Spinner } from '../components/ui/Spinner.jsx';
 import { StatCard } from '../components/ui/StatCard.jsx';
 import { useAuth } from '../context/authContext.js';
 import { useDashboardSummary } from '../hooks/useDashboardSummary.js';
 import { errorMessage } from '../utils/apiErrors.js';
 import { formatCount, formatDate, formatRelative } from '../utils/format.js';
-import { paths } from '../routes/paths.js';
+import { paths, studentRegisterHref } from '../routes/paths.js';
 
 const greetingFor = (hour) => {
   if (hour < 12) return 'Good morning';
@@ -45,6 +47,80 @@ const BandFigure = ({ label, value, isLoading }) => (
   </div>
 );
 
+/**
+ * One row of a distribution list, linking into the register already narrowed to
+ * whoever that row describes. The link is the row's label, so its accessible
+ * name says where it goes ("Computer Science, 42 students"), and long department
+ * or course names truncate rather than pushing the count off the panel.
+ */
+const DistributionRow = ({ label, count, max, to }) => (
+  <li>
+    <Link
+      to={to}
+      className="focus-ring group block rounded-field py-1"
+      title={`${label} — ${formatCount(count)} ${count === 1 ? 'student' : 'students'}`}
+    >
+      <span className="flex items-baseline justify-between gap-3">
+        <span className="truncate text-label font-medium text-charcoal group-hover:text-ink group-hover:underline group-hover:underline-offset-4">
+          {label}
+        </span>
+        <span className="shrink-0 text-label font-semibold text-ink tabular-nums">
+          {formatCount(count)}
+        </span>
+      </span>
+
+      <span className="mt-2 block h-2 overflow-hidden rounded-full bg-canvas-deep">
+        <span
+          className="block h-full rounded-full bg-beige-strong"
+          style={{ width: `${Math.max((count / max) * 100, 3)}%` }}
+        />
+      </span>
+
+      <span className="sr-only">
+        {count === 1 ? '1 student' : `${formatCount(count)} students`} — open in the register
+      </span>
+    </Link>
+  </li>
+);
+
+/** A distribution panel: the same list, driven by whatever the API grouped by. */
+const DistributionCard = ({ eyebrow, title, description, icon, rows, isLoading, emptyText }) => {
+  const max = Math.max(...rows.map((row) => row.count), 1);
+
+  return (
+    <Card>
+      <CardHeader eyebrow={eyebrow} title={title} description={description} icon={icon} />
+
+      <div className="px-panel py-4">
+        {isLoading ? (
+          <div className="space-y-4 py-1">
+            {Array.from({ length: 4 }).map((_, index) => (
+              <div key={index} className="space-y-2">
+                <Skeleton className="h-3 w-32" />
+                <Skeleton className="h-2 w-full" />
+              </div>
+            ))}
+          </div>
+        ) : rows.length === 0 ? (
+          <p className="py-1 text-label leading-relaxed text-muted">{emptyText}</p>
+        ) : (
+          <ul className="max-h-72 space-y-3 overflow-y-auto pr-1">
+            {rows.map((row) => (
+              <DistributionRow
+                key={row.label}
+                label={row.label}
+                count={row.count}
+                max={max}
+                to={row.to}
+              />
+            ))}
+          </ul>
+        )}
+      </div>
+    </Card>
+  );
+};
+
 export default function DashboardPage() {
   const { user } = useAuth();
   const summary = useDashboardSummary();
@@ -56,10 +132,6 @@ export default function DashboardPage() {
     month: 'long',
     year: 'numeric',
   }).format(new Date());
-
-  const maxDepartmentCount = Math.max(...summary.byDepartment.map((row) => row.count), 1);
-  const activeShare =
-    summary.total > 0 ? Math.round((summary.active / summary.total) * 100) : 0;
 
   return (
     <>
@@ -79,8 +151,10 @@ export default function DashboardPage() {
         }
       />
 
+      {/* A summary that could not be read is not a summary of zero students:
+          the figures are withheld and the failure is explained instead. */}
       {summary.isError ? (
-        <Card className="mb-section">
+        <Card>
           <ErrorState
             title={
               summary.errorKind === 'forbidden'
@@ -91,255 +165,317 @@ export default function DashboardPage() {
             onRetry={summary.refresh}
           />
         </Card>
-      ) : null}
+      ) : (
+        <div aria-busy={summary.isLoading || summary.isRefreshing || undefined}>
+          {/* The one band in the product that carries the identity: dark ground,
+              beige accents, and the two figures someone opens this page to see. */}
+          <section
+            aria-label="Register at a glance"
+            className="rounded-panel border border-charcoal bg-charcoal px-panel py-5 shadow-card sm:px-gutter"
+          >
+            <div className="flex flex-col gap-5 lg:flex-row lg:items-center lg:justify-between">
+              <div className="min-w-0">
+                <p className="text-micro font-semibold tracking-[0.14em] text-beige/80 uppercase">
+                  Register at a glance
+                </p>
+                <p className="mt-2 max-w-xl text-subheading leading-relaxed text-canvas/80">
+                  {summary.hasData
+                    ? `${formatCount(summary.total)} students on CampusDesk across ${formatCount(
+                        summary.departmentCount,
+                      )} ${summary.departmentCount === 1 ? 'department' : 'departments'}.`
+                    : 'Reading the register…'}
+                </p>
+                {summary.isRefreshing ? (
+                  <Spinner label="Updating figures…" className="mt-3 text-canvas/70" />
+                ) : null}
+              </div>
 
-      {/* The one band in the product that carries the identity: dark ground,
-          beige accents, and the four figures someone opens this page to see. */}
-      <section
-        aria-label="Register at a glance"
-        className="rounded-panel border border-charcoal bg-charcoal px-panel py-5 shadow-card sm:px-gutter"
-      >
-        <div className="flex flex-col gap-5 lg:flex-row lg:items-center lg:justify-between">
-          <div className="min-w-0">
-            <p className="text-micro font-semibold tracking-[0.14em] text-beige/80 uppercase">
-              Register at a glance
-            </p>
-            <p className="mt-2 max-w-xl text-subheading leading-relaxed text-canvas/80">
-              {summary.isLoading
-                ? 'Reading the register…'
-                : `${formatCount(summary.total)} students on CampusDesk across ${formatCount(
-                    summary.departmentCount,
-                  )} ${summary.departmentCount === 1 ? 'department' : 'departments'}.`}
-            </p>
-          </div>
+              <div className="grid w-full grid-cols-2 gap-3 sm:max-w-md lg:w-auto">
+                <BandFigure label="On register" value={summary.total} isLoading={!summary.hasData} />
+                <BandFigure label="Active now" value={summary.active} isLoading={!summary.hasData} />
+              </div>
+            </div>
+          </section>
 
-          <div className="grid w-full grid-cols-2 gap-3 sm:max-w-md lg:w-auto">
-            <BandFigure label="On register" value={summary.total} isLoading={summary.isLoading} />
-            <BandFigure label="Active now" value={summary.active} isLoading={summary.isLoading} />
-          </div>
-        </div>
-      </section>
-
-      <section aria-label="Register summary" className="mt-section grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-        {summary.isLoading ? (
-          Array.from({ length: 4 }).map((_, index) => <StatCardSkeleton key={index} />)
-        ) : (
-          <>
-            <StatCard
-              index={0}
-              label="Students on register"
-              value={summary.total}
-              hint="All records on CampusDesk"
-              icon={GraduationCap}
-              tone="charcoal"
-            />
-            <StatCard
-              index={1}
-              label="Active enrollments"
-              value={summary.active}
-              hint={`${activeShare}% of the register`}
-              icon={UserRoundCheck}
-              tone="success"
-            />
-            <StatCard
-              index={2}
-              label="Inactive records"
-              value={summary.inactive}
-              hint="Paused or completed"
-              icon={UserRoundX}
-              tone="warning"
-            />
-            <StatCard
-              index={3}
-              label="Departments"
-              value={summary.departmentCount}
-              hint="Represented on the register"
-              icon={Building2}
-              tone="beige"
-            />
-          </>
-        )}
-      </section>
-
-      <div className="mt-section grid gap-6 xl:grid-cols-[1.35fr_1fr]">
-        <Card className="overflow-hidden">
-          <CardHeader
-            eyebrow="Latest activity"
-            title="Recent registrations"
-            description="The newest students added to CampusDesk."
-            icon={CalendarCheck}
-            action={
-              <Link
-                to={paths.students}
-                className="inline-flex items-center gap-1 rounded text-label font-semibold text-charcoal transition-colors hover:text-ink"
-              >
-                View all
-                <ArrowUpRight className="size-3.5" aria-hidden="true" />
-              </Link>
-            }
-          />
-
-          <DataTable
-            isLoading={summary.isLoading}
-            skeletonRows={5}
-            rows={summary.recent}
-            getRowKey={(student) => student.id}
-            columns={[
-              {
-                key: 'name',
-                header: 'Student',
-                render: (student) => (
-                  <Link
-                    to={paths.student(student.id)}
-                    className="group flex items-center gap-3 rounded transition-colors"
-                  >
-                    <Avatar name={student.name} size="sm" />
-                    <span className="min-w-0">
-                      <span className="block truncate text-body font-semibold text-ink group-hover:underline group-hover:underline-offset-4">
-                        {student.name}
-                      </span>
-                      <span className="block truncate text-meta text-muted">
-                        {student.studentId}
-                      </span>
-                    </span>
-                  </Link>
-                ),
-              },
-              {
-                key: 'course',
-                header: 'Course',
-                render: (student) => (
-                  <span className="block max-w-[14rem] truncate text-label text-charcoal">
-                    {student.course}
-                  </span>
-                ),
-              },
-              {
-                key: 'registered',
-                header: 'Registered',
-                render: (student) => (
-                  <span className="text-label whitespace-nowrap text-muted">
-                    {formatDate(student.dateOfRegistration)}
-                  </span>
-                ),
-              },
-            ]}
-            renderMobileCard={(student) => (
-              <Link to={paths.student(student.id)} className="flex items-center gap-3 px-panel py-3.5">
-                <Avatar name={student.name} size="sm" />
-                <span className="min-w-0 flex-1">
-                  <span className="block truncate text-body font-semibold text-ink">
-                    {student.name}
-                  </span>
-                  <span className="block truncate text-meta text-muted">
-                    {student.studentId} · {formatRelative(student.dateOfRegistration)}
-                  </span>
-                </span>
-                <ArrowUpRight className="size-4 shrink-0 text-muted" aria-hidden="true" />
-              </Link>
+          {/* Each figure is a way into the register, already narrowed to the
+              students it describes. */}
+          <section
+            aria-label="Register summary"
+            className="mt-section grid gap-4 sm:grid-cols-2 xl:grid-cols-4"
+          >
+            {summary.isLoading ? (
+              Array.from({ length: 4 }).map((_, index) => <StatCardSkeleton key={index} />)
+            ) : (
+              <>
+                <StatCard
+                  index={0}
+                  label="Students on register"
+                  value={summary.total}
+                  hint="Every student record on CampusDesk"
+                  icon={GraduationCap}
+                  tone="charcoal"
+                  to={studentRegisterHref()}
+                  toLabel="Open the register"
+                />
+                <StatCard
+                  index={1}
+                  label="Active students"
+                  value={summary.active}
+                  hint="Records whose status is active"
+                  icon={UserRoundCheck}
+                  tone="success"
+                  to={studentRegisterHref({ status: 'active' })}
+                  toLabel="Open the active students in the register"
+                />
+                <StatCard
+                  index={2}
+                  label="Inactive students"
+                  value={summary.inactive}
+                  hint="Records whose status is inactive"
+                  icon={UserRoundX}
+                  tone="warning"
+                  to={studentRegisterHref({ status: 'inactive' })}
+                  toLabel="Open the inactive students in the register"
+                />
+                <StatCard
+                  index={3}
+                  label="Departments represented"
+                  value={summary.departmentCount}
+                  hint="Departments with students on the register"
+                  icon={Building2}
+                  tone="beige"
+                  to={studentRegisterHref()}
+                  toLabel="Open the register to filter by department"
+                />
+              </>
             )}
-            emptyState={
-              <EmptyState
-                icon={GraduationCap}
-                title="No students registered yet"
-                description="Once records are added they will appear here, newest first."
+          </section>
+
+          <div className="mt-section grid gap-6 xl:grid-cols-[1.35fr_1fr]">
+            <Card className="overflow-hidden">
+              <CardHeader
+                eyebrow="Latest additions"
+                title="Recent registrations"
+                description="The five newest records, by date of registration."
+                icon={CalendarCheck}
                 action={
-                  <Link to={paths.newStudent} className={buttonClasses({ size: 'sm' })}>
-                    Add the first student
+                  <Link
+                    to={paths.students}
+                    className="focus-ring inline-flex items-center gap-1 rounded text-label font-semibold text-charcoal transition-colors hover:text-ink"
+                  >
+                    View all
+                    <ArrowUpRight className="size-3.5" aria-hidden="true" />
                   </Link>
                 }
               />
-            }
-          />
-        </Card>
 
-        <div className="space-y-6">
-          <Card>
-            <CardHeader
-              eyebrow="Distribution"
-              title="Enrollment by department"
-              description="Where the register is concentrated today."
-              icon={Layers}
-            />
-
-            <div className="space-y-4 px-panel py-5">
-              {summary.isLoading ? (
-                Array.from({ length: 4 }).map((_, index) => (
-                  <div key={index} className="space-y-2">
-                    <Skeleton className="h-3 w-32" />
-                    <Skeleton className="h-2 w-full" />
-                  </div>
-                ))
-              ) : summary.byDepartment.length === 0 ? (
-                <p className="text-label text-muted">
-                  No students yet — add one and the distribution appears here.
-                </p>
-              ) : (
-                summary.byDepartment.slice(0, 5).map((row) => (
-                  <div key={row.label}>
-                    <div className="flex items-baseline justify-between gap-3">
-                      <p className="truncate text-label font-medium text-charcoal">{row.label}</p>
-                      <p className="text-label font-semibold text-ink tabular-nums">{row.count}</p>
-                    </div>
-
-                    <div className="mt-2 h-2 overflow-hidden rounded-full bg-canvas-deep">
-                      <div
-                        className="h-full rounded-full bg-beige-strong transition-[width] duration-200 ease-out"
-                        style={{ width: `${(row.count / maxDepartmentCount) * 100}%` }}
-                      />
-                    </div>
-                  </div>
-                ))
-              )}
-            </div>
-          </Card>
-
-          <Card>
-            <CardHeader
-              eyebrow="Enrolment"
-              title="Active and inactive"
-              description="How the register divides today."
-              icon={UserRoundCheck}
-            />
-
-            <div className="px-panel py-5">
-              {summary.isLoading ? (
-                <Skeleton className="h-12 w-full" />
-              ) : (
-                <>
-                  {/* One bar, two real proportions — no fabricated chart. */}
-                  <div
-                    className="flex h-2.5 overflow-hidden rounded-full bg-canvas-deep"
-                    role="img"
-                    aria-label={`${activeShare}% of records are active`}
-                  >
-                    <span className="bg-success" style={{ width: `${activeShare}%` }} />
-                    <span className="bg-line-strong" style={{ width: `${100 - activeShare}%` }} />
-                  </div>
-
-                  <ul className="mt-4 space-y-2.5">
-                    {[
-                      { label: 'Active', value: summary.active, status: 'active' },
-                      { label: 'Inactive', value: summary.inactive, status: 'inactive' },
-                    ].map((row) => (
-                      <li key={row.label} className="flex items-center justify-between gap-3">
-                        <StatusPill status={row.status} label={row.label} />
-                        <span className="text-body font-semibold text-ink tabular-nums">
-                          {formatCount(row.value)}
+              <DataTable
+                isLoading={summary.isLoading}
+                skeletonRows={5}
+                rows={summary.recent}
+                getRowKey={(student) => student.id}
+                columns={[
+                  {
+                    key: 'name',
+                    header: 'Student',
+                    render: (student) => (
+                      <Link
+                        to={paths.student(student.id)}
+                        className="group flex items-center gap-3 rounded transition-colors"
+                      >
+                        <Avatar name={student.name} size="sm" />
+                        <span className="min-w-0">
+                          <span className="block truncate text-body font-semibold text-ink group-hover:underline group-hover:underline-offset-4">
+                            {student.name}
+                          </span>
+                          <span className="block truncate text-meta text-muted">
+                            {student.studentId}
+                          </span>
                         </span>
-                      </li>
-                    ))}
-                  </ul>
+                        <span className="sr-only">— open this student</span>
+                      </Link>
+                    ),
+                  },
+                  {
+                    key: 'course',
+                    header: 'Course',
+                    render: (student) => (
+                      <span className="block max-w-[14rem]">
+                        <span className="block truncate text-label font-medium text-charcoal">
+                          {student.course}
+                        </span>
+                        <span className="block truncate text-meta text-muted">
+                          {student.department}
+                        </span>
+                      </span>
+                    ),
+                  },
+                  {
+                    key: 'status',
+                    header: 'Status',
+                    headerClassName: 'hidden xl:table-cell',
+                    cellClassName: 'hidden xl:table-cell',
+                    render: (student) => <StatusPill status={student.enrollmentStatus} />,
+                  },
+                  {
+                    key: 'registered',
+                    header: 'Registered',
+                    render: (student) => (
+                      <span className="block whitespace-nowrap">
+                        <span className="block text-label text-charcoal">
+                          {formatDate(student.dateOfRegistration)}
+                        </span>
+                        <span className="block text-meta text-muted">
+                          {formatRelative(student.dateOfRegistration)}
+                        </span>
+                      </span>
+                    ),
+                  },
+                ]}
+                renderMobileCard={(student) => (
+                  <Link
+                    to={paths.student(student.id)}
+                    className="focus-ring flex items-center gap-3 px-panel py-3.5"
+                  >
+                    <Avatar name={student.name} size="sm" />
+                    <span className="min-w-0 flex-1">
+                      <span className="block truncate text-body font-semibold text-ink">
+                        {student.name}
+                      </span>
+                      <span className="block truncate text-meta text-muted">
+                        {student.studentId} · {formatRelative(student.dateOfRegistration)}
+                      </span>
+                    </span>
+                    <StatusPill status={student.enrollmentStatus} />
+                    <ArrowUpRight className="size-4 shrink-0 text-muted" aria-hidden="true" />
+                  </Link>
+                )}
+                emptyState={
+                  <EmptyState
+                    icon={GraduationCap}
+                    title="No students registered yet"
+                    description="Once records are added they will appear here, newest first."
+                    action={
+                      <Link to={paths.newStudent} className={buttonClasses({ size: 'sm' })}>
+                        Add the first student
+                      </Link>
+                    }
+                  />
+                }
+              />
+            </Card>
 
-                  <p className="mt-4 border-t border-line/60 pt-4 text-meta leading-relaxed text-muted">
-                    Status controls whether a student is counted in active enrolment figures.
-                  </p>
-                </>
-              )}
+            <div className="space-y-6">
+              <DistributionCard
+                eyebrow="Distribution"
+                title="Enrollment by department"
+                description="Departments with students, largest first."
+                icon={Layers}
+                isLoading={summary.isLoading}
+                rows={summary.byDepartment.map((row) => ({
+                  ...row,
+                  to: studentRegisterHref({ department: row.label }),
+                }))}
+                emptyText="No students yet — add one and the distribution appears here."
+              />
+
+              <DistributionCard
+                eyebrow="Distribution"
+                title="Students by year of study"
+                description="How the register spreads across the years."
+                icon={CalendarRange}
+                isLoading={summary.isLoading}
+                rows={summary.byYear.map((row) => ({
+                  ...row,
+                  to: studentRegisterHref({ year: row.label }),
+                }))}
+                emptyText="No students yet — add one and the year breakdown appears here."
+              />
+
+              <Card>
+                <CardHeader
+                  eyebrow="Enrolment"
+                  title="Active and inactive"
+                  description="How the register divides by enrollment status."
+                  icon={UserRoundCheck}
+                />
+
+                <div className="px-panel py-5">
+                  {summary.isLoading ? (
+                    <Skeleton className="h-24 w-full" />
+                  ) : !summary.hasData || summary.total === 0 ? (
+                    <p className="text-label leading-relaxed text-muted">
+                      No students yet — status counts appear once records are added.
+                    </p>
+                  ) : (
+                    <>
+                      {/* One bar, two real counts from the API — no fabricated chart. */}
+                      <div
+                        className="flex h-2.5 overflow-hidden rounded-full bg-canvas-deep"
+                        role="img"
+                        aria-label={`${formatCount(summary.active)} active and ${formatCount(
+                          summary.inactive,
+                        )} inactive records`}
+                      >
+                        <span
+                          className="bg-success"
+                          style={{ width: `${(summary.active / summary.total) * 100}%` }}
+                        />
+                        <span
+                          className="bg-line-strong"
+                          style={{ width: `${(summary.inactive / summary.total) * 100}%` }}
+                        />
+                      </div>
+
+                      <ul className="mt-4 space-y-1">
+                        {[
+                          {
+                            label: 'Active',
+                            value: summary.active,
+                            status: 'active',
+                            to: studentRegisterHref({ status: 'active' }),
+                          },
+                          {
+                            label: 'Inactive',
+                            value: summary.inactive,
+                            status: 'inactive',
+                            to: studentRegisterHref({ status: 'inactive' }),
+                          },
+                        ].map((row) => (
+                          <li key={row.label}>
+                            <Link
+                              to={row.to}
+                              className="focus-ring flex items-center justify-between gap-3 rounded-field px-1 py-2 transition-colors hover:bg-beige/25"
+                            >
+                              <StatusPill status={row.status} label={row.label} />
+                              <span className="flex items-center gap-2">
+                                <span className="text-body font-semibold text-ink tabular-nums">
+                                  {formatCount(row.value)}
+                                </span>
+                                <ArrowUpRight
+                                  className="size-3.5 text-muted"
+                                  aria-hidden="true"
+                                />
+                                <span className="sr-only">
+                                  Open the {row.label.toLowerCase()} students in the register
+                                </span>
+                              </span>
+                            </Link>
+                          </li>
+                        ))}
+                      </ul>
+
+                      <p className="mt-4 border-t border-line/60 pt-4 text-meta leading-relaxed text-muted">
+                        Status controls whether a student is counted in active enrolment figures.
+                      </p>
+                    </>
+                  )}
+                </div>
+              </Card>
             </div>
-          </Card>
+          </div>
         </div>
-      </div>
+      )}
     </>
   );
 }
