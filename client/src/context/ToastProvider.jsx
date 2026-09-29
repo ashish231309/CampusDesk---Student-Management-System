@@ -70,14 +70,19 @@ export const ToastProvider = ({ children }) => {
           {toasts.map((toast) => {
             const { icon: Icon, accent, bar } = TONES[toast.tone] ?? TONES.info;
 
+            // Stacking is a layout change, so the remaining toasts slide up
+            // when one is dismissed; under reduced motion they simply close the
+            // gap. The entrance is short and ease-out with no overshoot: a
+            // confirmation has already happened and should not look like a
+            // celebration.
             return (
               <motion.div
                 key={toast.id}
                 layout={!prefersReducedMotion}
-                initial={{ opacity: 0, y: 16, scale: 0.97 }}
+                initial={prefersReducedMotion ? { opacity: 0 } : { opacity: 0, y: 12, scale: 0.98 }}
                 animate={{ opacity: 1, y: 0, scale: 1 }}
-                exit={{ opacity: 0, y: 8, scale: 0.98 }}
-                transition={{ type: 'spring', stiffness: 420, damping: 32 }}
+                exit={prefersReducedMotion ? { opacity: 0 } : { opacity: 0, y: 6, scale: 0.99 }}
+                transition={{ duration: 0.2, ease: [0.22, 1, 0.36, 1] }}
                 className="pointer-events-auto relative overflow-hidden rounded-panel border border-line/80 bg-surface shadow-raised"
               >
                 <span className={cx('absolute inset-y-0 left-0 w-1', bar)} aria-hidden="true" />

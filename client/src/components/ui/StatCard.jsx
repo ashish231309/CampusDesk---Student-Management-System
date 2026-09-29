@@ -14,15 +14,24 @@ const TONES = {
   warning: 'bg-warning/10 text-warning-ink',
 };
 
-const cardFrame = 'panel px-panel py-4 pt-5 transition-shadow duration-200 hover:shadow-raised';
+/**
+ * Resting and interactive cards share one frame, so a row of figures still reads
+ * as one row. The only difference is feedback: a card that leads somewhere lifts
+ * on hover and its arrow leans in the direction it will take you. Both are short
+ * (200 ms and under) and neither moves the card's content, so the row never
+ * jitters while the pointer crosses it.
+ */
+const cardFrame =
+  'panel px-panel py-4 pt-5 transition-[box-shadow,border-color] duration-200 hover:border-line-strong hover:shadow-raised';
 
 /**
  * A single figure from the register summary.
  *
  * The layout puts the label first and the number second, because the label is
- * what makes the number mean anything. The figure counts up once on mount — a
- * small, purposeful animation that draws the eye to the number rather than
- * decorating the panel.
+ * what makes the number mean anything. On mount the figure counts up from zero,
+ * which draws the eye to the size of the register; afterwards it only moves when
+ * the figure itself changes, so a refresh shows the new total rather than
+ * replaying the entrance (see `useCountUp`).
  *
  * Given a `to`, the whole card becomes one link into the register, already
  * narrowed to the students that figure describes (`toLabel` names where it goes
@@ -64,21 +73,30 @@ export const StatCard = ({
       {hint || to ? (
         <p className="mt-2 flex items-center gap-1.5 text-meta text-muted">
           {hint}
-          {to ? <ArrowUpRight className="size-3.5 shrink-0" aria-hidden="true" /> : null}
+          {to ? (
+            <ArrowUpRight
+              className="size-3.5 shrink-0 transition-transform duration-200 group-hover:translate-x-0.5 group-hover:-translate-y-0.5"
+              aria-hidden="true"
+            />
+          ) : null}
         </p>
       ) : null}
     </>
   );
 
   return (
+    // The card itself is what enters — not its icon, label and figure
+    // separately — and the delay is capped, so even the last card in the row is
+    // readable almost at once. This only ever runs on mount: refreshing the
+    // figures re-renders these cards without remounting them.
     <motion.div
-      initial={{ opacity: 0, y: 12 }}
+      initial={{ opacity: 0, y: 10 }}
       animate={{ opacity: 1, y: 0 }}
-      transition={{ duration: 0.4, delay: index * 0.06, ease: [0.22, 1, 0.36, 1] }}
+      transition={{ duration: 0.3, delay: Math.min(index * 0.05, 0.15), ease: [0.22, 1, 0.36, 1] }}
       className="h-full"
     >
       {to ? (
-        <Link to={to} className={cx(cardFrame, 'focus-ring block h-full')}>
+        <Link to={to} className={cx(cardFrame, 'focus-ring group block h-full')}>
           {body}
           <span className="sr-only">{toLabel}</span>
         </Link>

@@ -19,6 +19,21 @@ import { cx } from '../utils/cx.js';
 export default function NotFoundPage({ variant = 'standalone' }) {
   const { isAuthenticated } = useAuth();
 
+  /**
+   * Inside the application shell this page is already carried in by the shell's
+   * own route transition, so adding another entrance here would play two
+   * animations over the same content. Only the standalone screen — a visitor who
+   * is not signed in — animates itself in.
+   */
+  const entrance =
+    variant === 'app'
+      ? {}
+      : {
+          initial: { opacity: 0, y: 14 },
+          animate: { opacity: 1, y: 0 },
+          transition: { duration: 0.28, ease: [0.22, 1, 0.36, 1] },
+        };
+
   return (
     <div
       className={cx(
@@ -27,9 +42,7 @@ export default function NotFoundPage({ variant = 'standalone' }) {
       )}
     >
       <motion.div
-        initial={{ opacity: 0, y: 16 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: 0.4, ease: [0.22, 1, 0.36, 1] }}
+        {...entrance}
         className="w-full max-w-md rounded-panel border border-line/70 bg-surface p-8 text-center shadow-card"
       >
         <div className="flex justify-center">

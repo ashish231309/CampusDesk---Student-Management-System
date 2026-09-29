@@ -211,4 +211,45 @@ later stages, and database-backed verification wherever MongoDB is available.
   producing exactly the chips and sort chip it describes, and the dashboard
   rendering as a summary still being read rather than as zeros
 
-## Stage 10 — GSAP/Motion animations & interactive UX  ⏳
+## Stage 10 — GSAP/Motion animations & interactive UX  ✅
+
+- A dashboard figure can no longer flash its way back to zero: a refresh now
+  counts from the number already on screen to the new one (248 → 250), the
+  first load is the only time a figure counts up from zero, and an unchanged
+  figure animates nothing at all, so an unrelated re-render cannot restart it
+- The measured bars on the dashboard are the one place GSAP is used inside the
+  app, through a single `useBarGrowth` hook: React still renders every bar at its
+  real width, GSAP only grows it from zero the first time and slides it from its
+  previous width when the number behind it changes, it runs before the first
+  paint so a bar never flashes at full length, and the context is reverted on the
+  way out so no tween and no inline width survives the component
+- Entrance and update are now different things everywhere they matter: the route
+  transition moved from 0.45s to 0.3s and lost its `delay` prop, the stat cards
+  enter as cards (0.3s, delay capped at 0.15s), table rows fade in for 180ms with
+  a 120ms ceiling on the stagger, and the dashboard panels watch a signature built
+  from the API values they are showing
+- Filter chips arrive and leave with the URL inside an `AnimatePresence` row that
+  closes the gap instead of jumping; the chips hold no state of their own, the
+  sort chip stays separate from the filters, and the row is a live region
+- The mobile drawer animates both ways and fades its backdrop, so a closed drawer
+  is not in the page at all; every ordinary control now eases instead of
+  springing (toast, dialog, segmented pill, sidebar marker, buttons), and a
+  loading button stays inert and cannot be pressed twice
+- A field's message fades in inside a paragraph that stays mounted, so
+  `aria-describedby` always resolves, `aria-invalid` is set in the same render,
+  and the focus move after a failed submit never waits for the animation
+- Reduced motion is still decided per component — the count-up returns the API
+  value, the bars skip GSAP entirely, the drawer fades instead of sliding — with
+  no global kill switch, and nothing shakes, flashes, loops or makes a sound
+- `npm run verify` grew to 178 checks: seven static motion checks (one motion
+  system and no second library, durations inside the 0.1–0.35s bands, the page
+  transition belonging to the shell alone, the count-up's refresh behaviour, the
+  bars reading the API, the interactive surfaces, focus/labels/state, lifecycle
+  and cleanup) and two that render real screens in Node — a filtered URL whose
+  chips are present and not hidden waiting for an animation, and a closed drawer
+  or dialog not being in the page at all
+- Five deliberate regressions (a 0.6s animation, a second animation library in
+  the dependencies, a dialog stripped of its focus behaviour, a loading button
+  that stays pressable, an unreverted GSAP context) were each caught, and the
+  suite returned to 178/178 after they were removed
+

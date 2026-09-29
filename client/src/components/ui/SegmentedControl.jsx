@@ -35,7 +35,9 @@ export const SegmentedControl = ({ name, label, options = [], value, onChange, c
             <motion.span
               layoutId={`segmented-${name}`}
               className="absolute inset-0 -z-10 rounded-lg bg-surface shadow-card"
-              transition={{ type: 'spring', stiffness: 420, damping: 34 }}
+              // A short tween rather than a spring: the pill should arrive and
+              // stop, not wobble past the option it is marking.
+              transition={{ duration: 0.2, ease: [0.22, 1, 0.36, 1] }}
             />
           ) : null}
 

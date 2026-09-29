@@ -1,5 +1,5 @@
 import { forwardRef } from 'react';
-import { motion } from 'motion/react';
+import { motion, useReducedMotion } from 'motion/react';
 import { Loader2 } from 'lucide-react';
 
 import { buttonClasses } from './buttonStyles.js';
@@ -19,12 +19,20 @@ export const Button = forwardRef(function Button(
   },
   ref,
 ) {
+  const prefersReducedMotion = useReducedMotion();
+  // Press feedback only: the button dips very slightly under the pointer, and
+  // nothing moves if the user prefers reduced motion or the button is inert.
+  // A loading button is disabled in the same render, so it cannot be pressed —
+  // or pressed twice — while the request is in flight.
+  const pressFeedback =
+    prefersReducedMotion || disabled || isLoading ? undefined : { scale: 0.97 };
+
   return (
     <motion.button
       ref={ref}
       type={type}
-      whileTap={disabled || isLoading ? undefined : { scale: 0.975 }}
-      transition={{ duration: 0.12 }}
+      whileTap={pressFeedback}
+      transition={{ duration: 0.12, ease: 'easeOut' }}
       className={buttonClasses({ variant, size, className })}
       disabled={disabled || isLoading}
       aria-busy={isLoading || undefined}
@@ -45,14 +53,18 @@ export const Button = forwardRef(function Button(
 
 /** Square icon-only action used in table rows and toolbars. */
 export const IconButton = forwardRef(function IconButton(
-  { icon: Icon, label, variant = 'ghost', className, ...rest },
+  { icon: Icon, label, variant = 'ghost', className, disabled, ...rest },
   ref,
 ) {
+  const prefersReducedMotion = useReducedMotion();
+
   return (
     <motion.button
       ref={ref}
       type="button"
-      whileTap={{ scale: 0.94 }}
+      whileTap={prefersReducedMotion || disabled ? undefined : { scale: 0.96 }}
+      transition={{ duration: 0.12, ease: 'easeOut' }}
+      disabled={disabled}
       aria-label={label}
       title={label}
       className={buttonClasses({ variant, size: 'icon', className })}

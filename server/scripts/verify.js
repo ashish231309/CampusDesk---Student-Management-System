@@ -3574,7 +3574,7 @@ await check('filters advertise themselves and say how many are narrowing the reg
     'and a non-default sort is described separately from the filters',
   );
   assert(
-    chips.includes('Sorted by: {sort.label}') && chips.includes('aria-label={`Reset sorting'),
+    chips.includes('Sorted by: {sort.label}') && chips.includes('label={`Reset sorting'),
     'the chips row shows the sort as sorting, with its own way back to the default order',
   );
   assert(
@@ -3584,7 +3584,7 @@ await check('filters advertise themselves and say how many are narrowing the reg
   assert(chips.includes("{filters.length === 1 ? 'filter' : 'filters'}"), 'the chips row counts what is applied');
   assert(chips.includes('Clear all filters'), 'and offers one clear action');
   assert(
-    chips.includes('aria-label={`Remove filter: ${filter.label}`}'),
+    chips.includes('label={`Remove filter: ${filter.label}`}'),
     'each chip removes only itself, and says which filter it removes',
   );
   assert(
@@ -3652,6 +3652,332 @@ await check('page, sort and page size stay allowlisted, server-driven and never 
   assert(
     controller.includes('if (hasInvalidListParams(searchParams))'),
     'a hand-edited query self-corrects through the canonical writer',
+  );
+});
+
+// ---------------------------------------------------------------------------
+section('Motion & interactive UX (Stage 10)');
+// ---------------------------------------------------------------------------
+
+/** Every `duration: 0.32` inside a motion transition, with the file it came from. */
+const motionDurations = () => {
+  const found = [];
+  for (const [name, source] of clientFiles) {
+    if (name === 'pages/LandingPage.jsx') continue; // the landing hero is a one-shot, checked on its own
+    for (const match of source.matchAll(/duration:\s*([0-9.]+)/g)) {
+      found.push([name, Number(match[1])]);
+    }
+  }
+  return found;
+};
+
+await check('motion is one product, built from the libraries that were already installed', () => {
+  const gsapUsers = clientFiles
+    .filter(([, source]) => /from 'gsap'|from "gsap"/.test(source))
+    .map(([name]) => name)
+    .sort();
+
+  assert(
+    gsapUsers.join(', ') === 'hooks/useBarGrowth.js, pages/LandingPage.jsx',
+    `GSAP should stay where it earns its place, found: ${gsapUsers.join(', ') || 'nowhere'}`,
+  );
+
+  const motionUsers = clientFiles.filter(([, source]) => source.includes("from 'motion/react'"));
+  assert(motionUsers.length >= 12, 'component motion should still come from Motion');
+  for (const [name, source] of motionUsers) {
+    assert(
+      !source.includes("from 'framer-motion'") && !source.includes('from "framer-motion"'),
+      `${name} should use the installed motion package, not framer-motion`,
+    );
+  }
+
+  for (const [name, source] of clientFiles) {
+    assert(!/gsap\/[A-Za-z]|registerPlugin|ScrollTrigger|SplitText|Draggable/.test(source), `${name} should not pull in a GSAP plugin`);
+    assert(!/@react-spring|auto-animate|lottie|animate\.css|popmotion/.test(source), `${name} should not reference a second animation library`);
+  }
+
+  const manifest = JSON.parse(readFileSync(new URL('../../client/package.json', import.meta.url), 'utf8'));
+  const dependencies = Object.keys({ ...manifest.dependencies, ...manifest.devDependencies });
+  const animationish = dependencies.filter((name) => /motion|animate|spring|gsap|tween|transition|lottie/i.test(name));
+  assert(
+    animationish.sort().join(', ') === 'gsap, motion',
+    `the dependency list should not have grown an animation library: ${animationish.join(', ')}`,
+  );
+});
+
+await check('every animation stays inside the product timing bands', () => {
+  for (const [name, duration] of motionDurations()) {
+    assert(duration >= 0.1 && duration <= 0.35, `${name} animates for ${duration}s, outside the 0.1–0.35s band`);
+  }
+
+  assert(
+    !/duration-(?:500|700|1000)\b/.test(clientSource),
+    'no long decorative Tailwind duration should exist anywhere in the client',
+  );
+  assert(
+    !/\b(?:type:\s*'spring'|stiffness\s*:)/.test(clientSource),
+    'ordinary controls should ease rather than spring, so nothing overshoots',
+  );
+  assert(
+    !/\bbounce|elastic|back\.out\b/i.test(clientSource.replace(/\/\*[\s\S]*?\*\//g, '')),
+    'no cartoon easing should appear in the interface',
+  );
+
+  const bars = sourceOf('hooks/useBarGrowth.js');
+  assert(
+    /const ENTER_DURATION = 0\.\d+;/.test(bars) && /const UPDATE_DURATION = 0\.\d+;/.test(bars),
+    'the bar entrance and the bar update durations are named constants',
+  );
+  assert(
+    Number(bars.match(/const ENTER_DURATION = ([0-9.]+)/)[1]) <= 0.45 &&
+      Number(bars.match(/const UPDATE_DURATION = ([0-9.]+)/)[1]) <= 0.3,
+    'a bar grows once, briefly, and moves quickly when the figure behind it changes',
+  );
+  assert(
+    /const ENTER_STAGGER_LIMIT = ([0-9.]+)/.test(bars) &&
+      Number(bars.match(/const ENTER_STAGGER_LIMIT = ([0-9.]+)/)[1]) <= 0.2,
+    'the bar stagger is capped so the last row never waits',
+  );
+});
+
+/**
+ * Source with its comments removed, for assertions that look for a *decision*
+ * rather than the words that explain it.
+ */
+const withoutComments = (source) =>
+  source.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^[ \t]*\/\/.*$/gm, '');
+
+await check('page transitions belong to the shell alone and never delay navigation', () => {
+  const pageTransition = withoutComments(sourceOf('components/motion/PageTransition.jsx'));
+  const layout = withoutComments(sourceOf('components/layout/AppLayout.jsx'));
+
+  const definitions = clientFiles.filter(([, source]) => source.includes('<PageTransition'));
+  assert(
+    definitions.length === 1 && definitions[0][0] === 'components/layout/AppLayout.jsx',
+    'exactly one file wraps a route in the page transition',
+  );
+  assert(!layout.includes('PageTransition key={pathname}'), 'the shell should not restart the transition per URL, only per route pattern');
+  assert(layout.includes('const routePattern = matchRouteMeta(pathname).path'), 'the key stays the route pattern');
+  assert(
+    !/<PageTransition[^>]*delay/.test(layout) && !pageTransition.includes('delay') && !layout.includes('delay'),
+    'no route delay: navigation must be immediate',
+  );
+  assert(!pageTransition.includes('exit='), 'the transition has no exit, so a new screen never waits for the old one to leave');
+  assert(
+    pageTransition.includes("duration: prefersReducedMotion ? 0.16 : 0.3"),
+    'the entrance is short enough to read as instant, and shorter still under reduced motion',
+  );
+  assert(
+    !/\bexit=|\bAnimatePresence\b/.test(sourceOf('components/routing/ProtectedRoute.jsx')),
+    'guarding a route should not animate anything of its own',
+  );
+});
+
+await check('a refreshed figure never flashes back to zero', () => {
+  const counter = sourceOf('hooks/useCountUp.js');
+  const card = sourceOf('components/ui/StatCard.jsx');
+  const dashboard = sourceOf('pages/DashboardPage.jsx');
+
+  assert(
+    counter.includes('const from = displayed.current'),
+    'each run starts from the figure already on screen, which is what makes 248 → 250 an update and not an entrance',
+  );
+  assert(
+    counter.includes('displayed.current = next') && counter.includes('displayed.current = safeTarget'),
+    'the on-screen figure is remembered across renders and retired exactly on the API value',
+  );
+  assert(
+    counter.includes('if (from === safeTarget) return undefined;'),
+    'an unchanged target animates nothing, so an unrelated re-render cannot restart it',
+  );
+  assert(
+    /useEffect\(\(\) => \{[\s\S]*?\}, \[duration, prefersReducedMotion, safeTarget\]\);/.test(counter),
+    'the count is registered once per target and per motion preference',
+  );
+  assert(
+    counter.includes('cancelAnimationFrame(frame)') && !counter.includes('setInterval'),
+    'a cancelled or unmounted count-up leaves no frame behind',
+  );
+  assert(counter.includes('number = 520') === false && /duration = 5\d\d/.test(counter), 'the count stays short');
+  assert(
+    counter.includes('Number.isFinite(Number(target))'),
+    'a missing figure cannot be animated into an invented one',
+  );
+  assert(
+    card.includes('useCountUp(value)') && card.includes('{formatCount(animatedValue)}'),
+    'the card renders the counted figure through the one number formatter',
+  );
+  assert(
+    dashboard.includes('useDashboardSummary()') && !dashboard.includes('setInterval') && !dashboard.includes('requestAnimationFrame'),
+    'the dashboard never polls or drives its own frames',
+  );
+});
+
+await check('the dashboard bars say what the API said, and GSAP only moves towards it', () => {
+  const bars = sourceOf('hooks/useBarGrowth.js');
+  const dashboard = sourceOf('pages/DashboardPage.jsx');
+
+  assert(
+    bars.includes('gsap.context(') && bars.includes('return () => context.revert();'),
+    'GSAP has exactly one home, and it is reverted on the way out',
+  );
+  assert(
+    bars.includes('useLayoutEffect') && !bars.includes('useEffect('),
+    'the bars are set before the first paint, so they never flash at full length',
+  );
+  assert(
+    bars.includes("}, [prefersReducedMotion, signature]);"),
+    'the animation is keyed by the data signature, not by every render',
+  );
+  assert(
+    bars.includes("gsap.utils.toArray('[data-bar]')") && bars.includes('}, scope);'),
+    'the tweens are scoped to the panel that owns them',
+  );
+  assert(
+    bars.includes("overwrite: 'auto'") && bars.includes('const previous = painted.current.get(key)'),
+    'a change slides a bar from its previous width and never stacks two tweens',
+  );
+  assert(
+    bars.includes("if (!scope || prefersReducedMotion) return undefined;"),
+    'under reduced motion the bars are simply the right length, with no GSAP at all',
+  );
+  assert(
+    bars.includes('gsap.fromTo') && !bars.includes('gsap.to(') && !bars.includes('gsap.set('),
+    'GSAP only animates between two widths React already declared',
+  );
+
+  assert(
+    (dashboard.match(/data-bar=/g) ?? []).length === 3 &&
+      dashboard.includes("data-bar={label}") &&
+      dashboard.includes('data-bar="active"') &&
+      dashboard.includes('data-bar="inactive"'),
+    'every measured bar is named for the animation, and every bar is one of the API facets',
+  );
+  assert(
+    dashboard.includes('Math.max((count / max) * 100, 3)'),
+    'the 3% visibility floor is still applied to the real counts',
+  );
+  assert(
+    dashboard.includes('style={{ width:') && !dashboard.includes("gsap.set("),
+    'the width in the markup is React’s, so the figure is correct with or without the animation',
+  );
+  assert(
+    (dashboard.match(/useBarGrowth\(/g) ?? []).length === 3 &&
+      dashboard.includes('`${row.label}:${row.count}`') &&
+      dashboard.includes('`${summary.active}:${summary.inactive}:${summary.total}`'),
+    'each panel watches its own API values, so a refresh of the same numbers changes nothing',
+  );
+});
+
+await check('interactive surfaces keep their motion inside the rules', () => {
+  const chips = sourceOf('components/students/ActiveFilterChips.jsx');
+  const drawer = sourceOf('components/layout/Sidebar.jsx');
+  const modal = sourceOf('components/ui/Modal.jsx');
+  const toasts = sourceOf('context/ToastProvider.jsx');
+  const segmented = sourceOf('components/ui/SegmentedControl.jsx');
+  const table = sourceOf('components/ui/DataTable.jsx');
+
+  assert(
+    chips.includes('AnimatePresence initial={false}') && chips.includes('layout="position"'),
+    'chips arrive and leave with the URL, and the row closes the gap instead of jumping',
+  );
+  assert(
+    chips.includes('exit={{ opacity: 0, transition: { duration: 0.12 } }}') &&
+      !chips.includes('useState'),
+    'the chips row has no state of its own: what it draws is what the URL says',
+  );
+  assert(
+    chips.includes('aria-live="polite"') && chips.includes('aria-label="Clear all filters"') === false,
+    'the chips row is announced as it changes',
+  );
+
+  assert(
+    drawer.includes('AnimatePresence') && drawer.includes('exit={prefersReducedMotion ? { opacity: 0 }'),
+    'the mobile drawer animates both ways, and fades instead of sliding under reduced motion',
+  );
+  assert(
+    drawer.includes("animate={prefersReducedMotion ? { opacity: 1 } : { x: 0 }}") &&
+      drawer.includes('duration: 0.24'),
+    'the drawer arrives in 240ms and is never a decorative slide',
+  );
+  assert(
+    drawer.includes("if (event.key === 'Escape') setDrawerRoute(null);") === false &&
+      sourceOf('components/layout/AppLayout.jsx').includes("if (event.key === 'Escape') setDrawerRoute(null);"),
+    'Escape still closes the drawer, from the shell that owns the state',
+  );
+
+  assert(
+    modal.includes("initial={{ opacity: 0, y: 24, scale: 0.98 }}") &&
+      modal.includes('duration: 0.22, ease: [0.22, 1, 0.36, 1]'),
+    'a dialog eases in quickly instead of springing',
+  );
+  assert(
+    modal.includes('aria-modal="true"') && modal.includes('FOCUSABLE') && modal.includes('event.key === \'Escape\''),
+    'the dialog keeps its trap, its Escape and its modal semantics',
+  );
+
+  assert(toasts.includes('AnimatePresence initial={false}') && toasts.includes('duration: 0.2'), 'a toast appears immediately and briefly');
+  assert(
+    toasts.includes('layout={!prefersReducedMotion}') && toasts.includes('role="status"') && toasts.includes('aria-live="polite"'),
+    'the remaining toasts reflow without animating for someone who asked for less motion',
+  );
+  assert(segmented.includes('duration: 0.2') && segmented.includes('aria-checked={isActive}'), 'the segmented pill eases between options and keeps its radio semantics');
+  assert(
+    table.includes('duration: 0.18') && table.includes('hover:bg-beige/20') && !table.includes('scale'),
+    'table rows fade in briefly and change colour on hover — never position',
+  );
+});
+
+await check('animated surfaces keep their focus, their labels and their state', () => {
+  const button = sourceOf('components/ui/Button.jsx');
+  const field = sourceOf('components/ui/Field.jsx');
+  const statCard = sourceOf('components/ui/StatCard.jsx');
+  const states = sourceOf('components/ui/States.jsx');
+
+  assert(
+    button.includes('disabled={disabled || isLoading}') && button.includes('aria-busy={isLoading || undefined}'),
+    'a loading button is inert in the same render it starts loading',
+  );
+  assert(
+    button.includes('prefersReducedMotion || disabled || isLoading ? undefined : { scale: 0.97 }'),
+    'press feedback is skipped when the button is inert or the user prefers less motion',
+  );
+  assert(
+    button.includes('animate-spin') && button.includes('aria-hidden="true"'),
+    'the spinner is decorative and never announced twice',
+  );
+
+  assert(
+    field.includes('AnimatePresence initial={false} mode="wait"') &&
+      field.includes("'aria-describedby': error || hint ? messageId : undefined"),
+    'the error message animates, while the control is described in the same render',
+  );
+  assert(
+    field.includes("'aria-invalid': error ? true : undefined") && !field.includes('onAnimationComplete'),
+    'a rejected field is marked immediately, and nothing waits for an animation to finish',
+  );
+
+  assert(
+    statCard.includes('group-hover:translate-x-0.5') && statCard.includes('group block h-full'),
+    'the dashboard cards answer the pointer with a nudge of the arrow only',
+  );
+  assert(
+    !/whileHover|whileTap/.test(statCard) && statCard.includes('hover:border-line-strong hover:shadow-raised'),
+    'a card does not jump, rotate or glow',
+  );
+
+  assert(states.includes('duration: 0.24'), 'an empty or failed state arrives quietly');
+  assert(
+    !/(?:shake|flash|vibrate|Audio|playSound)/i.test(clientSource.replace(/\/\*[\s\S]*?\*\//g, '')),
+    'nothing shakes, flashes or makes a sound',
+  );
+  assert(
+    !/requestAnimationFrame/.test(clientSource.replace(sourceOf('hooks/useCountUp.js'), '')),
+    'the count-up is the only place the product drives its own frames',
+  );
+  assert(
+    !/while\s*\(\s*true/.test(clientSource) && !/setInterval/.test(clientSource),
+    'no unbounded loop or repeating timer animates anything',
   );
 });
 
@@ -4008,6 +4334,68 @@ await check('a filtered URL renders the same state it describes', async () => {
       !clean.includes('Status: Active') &&
       !clean.includes('Sorted by:'),
     'a two-filter URL produces two chips, no sort chip and nothing else',
+  );
+});
+
+const chipsRowOf = (html) => html.slice(html.indexOf('Filtering by'), html.indexOf('Filtering by') + 2000);
+
+await check('animated surfaces render what the URL says, never their animation state', async () => {
+  const filtered = await renderSignedIn(
+    `${declaredPaths.students}?search=kumar&status=active&page=2`,
+    'students',
+  );
+  const chipsRow = chipsRowOf(filtered);
+
+  assert(filtered.includes('Filtering by'), 'the chips row is in the markup, not only in an exit animation');
+  assert(
+    (filtered.match(/aria-label="Remove filter:/g) ?? []).length === 2,
+    'both active filters are present as chips',
+  );
+  assert(
+    !/style="[^"]*opacity:\s*0/.test(chipsRow),
+    'nothing in the chips row is rendered hidden waiting for an animation',
+  );
+  assert(
+    /class="[^"]*badge[^"]*"/.test(chipsRow) || chipsRow.includes('border-line'),
+    'the chips are styled markup rather than placeholders',
+  );
+
+  const plain = await renderSignedIn(declaredPaths.students, 'students');
+  assert(!plain.includes('Filtering by'), 'an unfiltered register renders no chips row at all');
+  assert(
+    !/style="[^"]*opacity:\s*0/.test(chipsRowOf(plain)),
+    'and nothing in an unfiltered register is waiting to appear',
+  );
+  // The one hidden element a screen may contain is the shell's own entrance
+  // wrapper; rows, chips, cards and panels are all rendered readable, so a
+  // missing animation can never hide data.
+  assert(
+    (plain.match(/style="[^"]*opacity:\s*0[^"]*"/g) ?? []).length === 1 &&
+      plain.includes('style="opacity:0;transform:translateY(12px)"'),
+    'only the shell\u2019s route entrance starts from zero opacity, and it is a 12px rise',
+  );
+});
+
+await check('a closed panel is not in the page at all', async () => {
+  const shell = await renderSignedIn(declaredPaths.students, 'students');
+  const dashboard = await renderSignedIn(declaredPaths.dashboard, 'dashboard');
+
+  for (const [name, html] of [
+    ['the register', shell],
+    ['the dashboard', dashboard],
+  ]) {
+    assert(!html.includes('Navigation drawer'), `${name} should not render the mobile drawer while it is closed`);
+    assert(!html.includes('aria-modal'), `${name} should not render a dialog that was never opened`);
+    assert(!html.includes('role="dialog"'), `${name} should not carry dialog markup while closed`);
+    assert(
+      !/aria-hidden="true"[^>]*>(?:(?!<\/)[\s\S])*?<button/.test(html),
+      `${name} should not hide interactive controls from assistive technology`,
+    );
+  }
+
+  assert(
+    shell.includes('aria-busy=') === false || shell.includes('aria-busy="true"'),
+    'the register only reports busy when it really is',
   );
 });
 

@@ -22,6 +22,12 @@ const FOCUSABLE =
  * on open and returns to whatever opened it on close, and Tab is kept inside the
  * panel while it is up. The panel is a bottom sheet on phones and a centred card
  * from small screens up, which is the shape each size actually wants.
+ *
+ * The motion here is deliberately secondary to that behaviour: a short ease-out
+ * of the panel and a fade of the backdrop, in and out. Nothing about opening or
+ * closing a dialog depends on the animation finishing — focus is placed in the
+ * same tick, Escape works immediately, and a dialog raised inside another one
+ * (the delete confirmation lives on the detail screen) enters on top of it.
  */
 export const Modal = ({
   open,
@@ -95,7 +101,7 @@ export const Modal = ({
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
-            transition={{ duration: 0.18 }}
+            transition={{ duration: 0.16 }}
             onClick={onClose}
             className="fixed inset-0 z-[90] bg-charcoal/45 backdrop-blur-[2px]"
             aria-hidden="true"
@@ -113,7 +119,7 @@ export const Modal = ({
               initial={{ opacity: 0, y: 24, scale: 0.98 }}
               animate={{ opacity: 1, y: 0, scale: 1 }}
               exit={{ opacity: 0, y: 12, scale: 0.985 }}
-              transition={{ type: 'spring', stiffness: 320, damping: 30 }}
+              transition={{ duration: 0.22, ease: [0.22, 1, 0.36, 1] }}
               className={cx(
                 'pointer-events-auto w-full rounded-panel border border-line/70 bg-surface shadow-overlay outline-none',
                 SIZES[size] ?? SIZES.md,

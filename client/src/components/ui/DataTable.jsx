@@ -59,7 +59,10 @@ export const DataTable = ({
                 key={getRowKey(row)}
                 initial={{ opacity: 0 }}
                 animate={{ opacity: 1 }}
-                transition={{ duration: 0.22, delay: Math.min(index * 0.025, 0.2) }}
+                // A row that is new since the last query fades in briefly. The
+                // delay is capped low on purpose: changing a filter should not
+                // make the table take a visible moment to arrive.
+                transition={{ duration: 0.18, delay: Math.min(index * 0.02, 0.12) }}
                 className="group transition-colors duration-150 hover:bg-beige/20"
               >
                 {columns.map((column) => (

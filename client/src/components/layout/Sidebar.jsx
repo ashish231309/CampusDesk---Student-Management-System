@@ -1,5 +1,5 @@
 import { Link, useLocation } from 'react-router-dom';
-import { motion, useReducedMotion } from 'motion/react';
+import { AnimatePresence, motion, useReducedMotion } from 'motion/react';
 import { GraduationCap, X } from 'lucide-react';
 
 import { Logo } from '../branding/Logo.jsx';
@@ -36,7 +36,9 @@ const NavItem = ({ item, onNavigate, layoutGroup, pathname }) => {
         <motion.span
           layoutId={`sidebar-active-${layoutGroup}`}
           className="absolute inset-0 -z-10 rounded-field bg-beige/70"
-          transition={{ type: 'spring', stiffness: 420, damping: 34 }}
+          // The marker slides between items as one continuous element, quickly
+          // and without overshoot — the link stays where it was either way.
+          transition={{ duration: 0.2, ease: [0.22, 1, 0.36, 1] }}
         />
       ) : null}
 
@@ -113,6 +115,14 @@ const SidebarContent = ({ onNavigate, layoutGroup, onClose, pathname }) => (
 /**
  * Desktop rail plus a mobile drawer. The drawer is rendered by the layout so
  * the page behind it does not need to know about it.
+ *
+ * The desktop rail is static and stays that way — a navigation column that slid
+ * about would be noise. On a phone the drawer arrives from the left and fades
+ * its backdrop, and it leaves the same way it came: `AnimatePresence` keeps the
+ * panel mounted only for the length of that exit, so a closed drawer is not
+ * present in the page at all (nothing focusable, nothing to click) as soon as it
+ * has gone. Escape, the backdrop and navigation all close it through the same
+ * handler in the layout, so the motion never becomes the mechanism.
  */
 export const Sidebar = ({ isOpen, onClose }) => {
   const prefersReducedMotion = useReducedMotion();
@@ -124,32 +134,37 @@ export const Sidebar = ({ isOpen, onClose }) => {
         <SidebarContent layoutGroup="desktop" pathname={pathname} />
       </aside>
 
-      {isOpen ? (
-        <div className="lg:hidden">
-          <motion.div
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            className="fixed inset-0 z-40 bg-charcoal/45 backdrop-blur-[2px]"
-            onClick={onClose}
-            aria-hidden="true"
-          />
-
-          <motion.aside
-            initial={prefersReducedMotion ? { opacity: 0 } : { x: '-100%' }}
-            animate={prefersReducedMotion ? { opacity: 1 } : { x: 0 }}
-            transition={{ type: 'spring', stiffness: 380, damping: 36 }}
-            className="fixed inset-y-0 left-0 z-50 w-[282px] max-w-[85vw] overflow-y-auto border-r border-line/70 bg-surface shadow-raised"
-            aria-label="Navigation drawer"
-          >
-            <SidebarContent
-              layoutGroup="mobile"
-              onNavigate={onClose}
-              onClose={onClose}
-              pathname={pathname}
+      <AnimatePresence>
+        {isOpen ? (
+          <div className="lg:hidden">
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              transition={{ duration: 0.18 }}
+              className="fixed inset-0 z-40 bg-charcoal/45 backdrop-blur-[2px]"
+              onClick={onClose}
+              aria-hidden="true"
             />
-          </motion.aside>
-        </div>
-      ) : null}
+
+            <motion.aside
+              initial={prefersReducedMotion ? { opacity: 0 } : { x: '-100%' }}
+              animate={prefersReducedMotion ? { opacity: 1 } : { x: 0 }}
+              exit={prefersReducedMotion ? { opacity: 0 } : { x: '-100%' }}
+              transition={{ duration: 0.24, ease: [0.22, 1, 0.36, 1] }}
+              className="fixed inset-y-0 left-0 z-50 w-[282px] max-w-[85vw] overflow-y-auto border-r border-line/70 bg-surface shadow-raised"
+              aria-label="Navigation drawer"
+            >
+              <SidebarContent
+                layoutGroup="mobile"
+                onNavigate={onClose}
+                onClose={onClose}
+                pathname={pathname}
+              />
+            </motion.aside>
+          </div>
+        ) : null}
+      </AnimatePresence>
     </>
   );
 };

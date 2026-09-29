@@ -1,4 +1,5 @@
 import { Children, cloneElement, forwardRef, isValidElement, useId } from 'react';
+import { AnimatePresence, motion } from 'motion/react';
 import { ChevronDown, CircleAlert } from 'lucide-react';
 
 import { cx } from '../../utils/cx.js';
@@ -63,14 +64,40 @@ export const Field = ({ id, label, hint, error, required, children, className, l
         )}
       </div>
 
-      {error ? (
-        <p id={messageId} className="flex items-start gap-1.5 text-meta font-medium text-danger">
-          <CircleAlert className="mt-0.5 size-3.5 shrink-0" aria-hidden="true" />
-          {error}
-        </p>
-      ) : hint ? (
-        <p id={messageId} className="text-meta text-muted">
-          {hint}
+      {/* The message arrives rather than blinking into place, which makes a
+          newly failed field easy to spot. The paragraph itself stays mounted
+          whenever there is something to say, so `aria-describedby` always
+          resolves to a real element; only the line inside it animates. Nothing
+          here delays the control: `aria-invalid` and the description are set in
+          the same render, and the focus move after a failed submit never waits
+          for the fade. */}
+      {error || hint ? (
+        <p
+          id={messageId}
+          className={cx(
+            'text-meta',
+            error ? 'font-medium text-danger' : 'text-muted',
+          )}
+        >
+          <AnimatePresence initial={false} mode="wait">
+            <motion.span
+              key={error ? 'error' : 'hint'}
+              initial={{ opacity: 0, y: -2 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0 }}
+              transition={{ duration: 0.14, ease: 'easeOut' }}
+              className={error ? 'flex items-start gap-1.5' : 'block'}
+            >
+              {error ? (
+                <>
+                  <CircleAlert className="mt-0.5 size-3.5 shrink-0" aria-hidden="true" />
+                  {error}
+                </>
+              ) : (
+                hint
+              )}
+            </motion.span>
+          </AnimatePresence>
         </p>
       ) : null}
     </div>

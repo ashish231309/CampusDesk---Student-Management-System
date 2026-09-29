@@ -80,10 +80,13 @@ export const PublicLayout = () => {
       </aside>
 
       <main className="flex flex-col justify-center bg-canvas px-4 py-10 sm:px-8 lg:px-12 lg:py-14">
+        {/* The panel is the whole screen here, so it gets the one entrance
+            allowed on an auth page — short enough that the form is usable
+            immediately, and the inputs never move separately from their card. */}
         <motion.div
-          initial={{ opacity: 0, y: 18 }}
+          initial={{ opacity: 0, y: 14 }}
           animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.45, ease: [0.22, 1, 0.36, 1] }}
+          transition={{ duration: 0.3, ease: [0.22, 1, 0.36, 1] }}
           className="mx-auto w-full max-w-[440px]"
         >
           {/* Compact masthead where the brand panel is not shown. */}

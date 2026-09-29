@@ -22,6 +22,7 @@ import { Skeleton, StatCardSkeleton } from '../components/ui/Skeleton.jsx';
 import { Spinner } from '../components/ui/Spinner.jsx';
 import { StatCard } from '../components/ui/StatCard.jsx';
 import { useAuth } from '../context/authContext.js';
+import { useBarGrowth } from '../hooks/useBarGrowth.js';
 import { useDashboardSummary } from '../hooks/useDashboardSummary.js';
 import { errorMessage } from '../utils/apiErrors.js';
 import { formatCount, formatDate, formatRelative } from '../utils/format.js';
@@ -70,7 +71,11 @@ const DistributionRow = ({ label, count, max, to }) => (
       </span>
 
       <span className="mt-2 block h-2 overflow-hidden rounded-full bg-canvas-deep">
+        {/* The width is React's, and it is what the HTML says; GSAP only grows
+            the bar towards it. `data-bar` gives the animation a stable name, so
+            a refresh slides a bar rather than restarting it. */}
         <span
+          data-bar={label}
           className="block h-full rounded-full bg-beige-strong"
           style={{ width: `${Math.max((count / max) * 100, 3)}%` }}
         />
@@ -84,7 +89,7 @@ const DistributionRow = ({ label, count, max, to }) => (
 );
 
 /** A distribution panel: the same list, driven by whatever the API grouped by. */
-const DistributionCard = ({ eyebrow, title, description, icon, rows, isLoading, emptyText }) => {
+const DistributionCard = ({ eyebrow, title, description, icon, rows, isLoading, emptyText, scopeRef }) => {
   const max = Math.max(...rows.map((row) => row.count), 1);
 
   return (
@@ -104,7 +109,7 @@ const DistributionCard = ({ eyebrow, title, description, icon, rows, isLoading, 
         ) : rows.length === 0 ? (
           <p className="py-1 text-label leading-relaxed text-muted">{emptyText}</p>
         ) : (
-          <ul className="max-h-72 space-y-3 overflow-y-auto pr-1">
+          <ul ref={scopeRef} className="max-h-72 space-y-3 overflow-y-auto pr-1">
             {rows.map((row) => (
               <DistributionRow
                 key={row.label}
@@ -124,6 +129,18 @@ const DistributionCard = ({ eyebrow, title, description, icon, rows, isLoading, 
 export default function DashboardPage() {
   const { user } = useAuth();
   const summary = useDashboardSummary();
+
+  /**
+   * Each measured panel gets its own animation scope, and a signature built from
+   * the numbers it is showing. The signature is what tells an entrance apart
+   * from an update: while it is unchanged, a re-render — a refresh that returned
+   * the same figures, the toast list, the user menu — cannot restart anything.
+   */
+  const departmentBars = useBarGrowth(
+    summary.byDepartment.map((row) => `${row.label}:${row.count}`).join('|'),
+  );
+  const yearBars = useBarGrowth(summary.byYear.map((row) => `${row.label}:${row.count}`).join('|'));
+  const statusBar = useBarGrowth(`${summary.active}:${summary.inactive}:${summary.total}`);
 
   const displayName = user?.name ?? 'there';
   const today = new Intl.DateTimeFormat('en-GB', {
@@ -372,6 +389,7 @@ export default function DashboardPage() {
                 description="Departments with students, largest first."
                 icon={Layers}
                 isLoading={summary.isLoading}
+                scopeRef={departmentBars}
                 rows={summary.byDepartment.map((row) => ({
                   ...row,
                   to: studentRegisterHref({ department: row.label }),
@@ -385,6 +403,7 @@ export default function DashboardPage() {
                 description="How the register spreads across the years."
                 icon={CalendarRange}
                 isLoading={summary.isLoading}
+                scopeRef={yearBars}
                 rows={summary.byYear.map((row) => ({
                   ...row,
                   to: studentRegisterHref({ year: row.label }),
@@ -411,6 +430,7 @@ export default function DashboardPage() {
                     <>
                       {/* One bar, two real counts from the API — no fabricated chart. */}
                       <div
+                        ref={statusBar}
                         className="flex h-2.5 overflow-hidden rounded-full bg-canvas-deep"
                         role="img"
                         aria-label={`${formatCount(summary.active)} active and ${formatCount(
@@ -418,10 +438,12 @@ export default function DashboardPage() {
                         )} inactive records`}
                       >
                         <span
+                          data-bar="active"
                           className="bg-success"
                           style={{ width: `${(summary.active / summary.total) * 100}%` }}
                         />
                         <span
+                          data-bar="inactive"
                           className="bg-line-strong"
                           style={{ width: `${(summary.inactive / summary.total) * 100}%` }}
                         />
