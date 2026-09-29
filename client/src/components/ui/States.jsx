@@ -1,5 +1,5 @@
 import { motion } from 'motion/react';
-import { CircleAlert, RotateCcw, ServerCrash } from 'lucide-react';
+import { CircleAlert, Info, RotateCcw, ServerCrash, TriangleAlert } from 'lucide-react';
 
 import { cx } from '../../utils/cx.js';
 import { Button } from './Button.jsx';
@@ -43,21 +43,37 @@ const StateShell = ({
 
 /**
  * The banner above a form when the request itself failed — a rejected sign-in, a
- * server-side validation summary. It is announced as an alert and explains the
- * problem in one sentence; the failing fields carry their own messages.
+ * server-side validation summary — and the one above it when there is something
+ * to explain before the user starts (a session that expired, a rule that applies
+ * to their account).
+ *
+ * Three tones, one shape, and the icon carries the meaning as well as the colour.
+ * A failure is announced assertively; anything else is a status message, so a
+ * screen reader is not interrupted for something that is not an error.
  */
-export const FormAlert = ({ children, className }) => (
-  <div
-    role="alert"
-    className={cx(
-      'flex items-start gap-3 rounded-card border border-danger/25 bg-danger/[0.05] px-4 py-3',
-      className,
-    )}
-  >
-    <CircleAlert className="mt-0.5 size-4 shrink-0 text-danger" aria-hidden="true" />
-    <p className="text-label leading-relaxed text-ink">{children}</p>
-  </div>
-);
+const ALERT_TONES = {
+  danger: { Icon: CircleAlert, accent: 'text-danger', frame: 'border-danger/25 bg-danger/[0.05]' },
+  warning: {
+    Icon: TriangleAlert,
+    accent: 'text-warning-ink',
+    frame: 'border-warning/35 bg-warning/[0.06]',
+  },
+  info: { Icon: Info, accent: 'text-info', frame: 'border-info/25 bg-info/[0.06]' },
+};
+
+export const FormAlert = ({ children, tone = 'danger', className }) => {
+  const { Icon, accent, frame } = ALERT_TONES[tone] ?? ALERT_TONES.danger;
+
+  return (
+    <div
+      role={tone === 'danger' ? 'alert' : 'status'}
+      className={cx('flex items-start gap-3 rounded-card border px-4 py-3', frame, className)}
+    >
+      <Icon className={cx('mt-0.5 size-4 shrink-0', accent)} aria-hidden="true" />
+      <p className="text-label leading-relaxed text-ink">{children}</p>
+    </div>
+  );
+};
 
 export const EmptyState = ({ icon, title, description, action, className }) => (
   <StateShell

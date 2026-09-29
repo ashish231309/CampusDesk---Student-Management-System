@@ -30,6 +30,7 @@ import { useStudent } from '../hooks/useStudent.js';
 import { studentService } from '../services/studentService.js';
 import { formatDate, formatRelative } from '../utils/format.js';
 import { appConfig } from '../config/app.js';
+import { backToRegister, currentPath } from '../routes/returnState.js';
 import { paths } from '../routes/paths.js';
 import { routeCrumbs } from '../routes/routeMeta.js';
 
@@ -57,7 +58,8 @@ const DetailGroup = ({ icon, title, description, children }) => (
 
 export default function StudentDetailPage() {
   const { id } = useParams();
-  const { pathname } = useLocation();
+  const location = useLocation();
+  const { pathname } = location;
   const navigate = useNavigate();
   const toast = useToast();
   const { student, status, error, errorKind, refresh } = useStudent(id);
@@ -69,22 +71,39 @@ export default function StudentDetailPage() {
   const [isConfirmOpen, setIsConfirmOpen] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
 
+  /**
+   * The register this workflow started from, so leaving the student — including
+   * after deleting them — returns to the search, filters and page the user was
+   * working in rather than to a reset register.
+   */
+  const registerFrom = backToRegister(location);
+
+  /**
+   * Deletion is never optimistic: the dialog stays up until the API has
+   * confirmed the record is gone. A failure keeps it open with the reason
+   * beside it, so the user can retry instead of wondering what happened; a 404
+   * means somebody else already removed the record, which is a success in the
+   * only sense that matters — the register no longer has it.
+   */
   const handleDelete = async () => {
+    if (isDeleting) return;
     setIsDeleting(true);
+
     try {
       await studentService.remove(student.id);
+      setIsConfirmOpen(false);
       toast.success(`${student.name} was removed from the register.`, 'Student deleted');
-      navigate(paths.students, { replace: true });
+      navigate(registerFrom, { replace: true });
     } catch (deleteError) {
       if (deleteError.isNotFound) {
-        toast.info('That student has already been removed.', 'Already deleted');
-        navigate(paths.students, { replace: true });
+        setIsConfirmOpen(false);
+        toast.info('That student had already been removed from the register.', 'Already deleted');
+        navigate(registerFrom, { replace: true });
       } else {
         toast.error(errorMessage(deleteError), 'Could not delete student');
       }
     } finally {
       setIsDeleting(false);
-      setIsConfirmOpen(false);
     }
   };
 
@@ -101,7 +120,7 @@ export default function StudentDetailPage() {
             title={`No student with the id "${id}"`}
             description="The record may have been removed, or the link may be out of date."
             action={
-              <Link to={paths.students} className={buttonClasses({ size: 'sm' })}>
+              <Link to={registerFrom} className={buttonClasses({ size: 'sm' })}>
                 Back to the register
               </Link>
             }
@@ -152,14 +171,18 @@ export default function StudentDetailPage() {
             <Button
               variant="secondary"
               icon={ArrowLeft}
-              onClick={() => navigate(paths.students)}
+              onClick={() => navigate(registerFrom)}
             >
               <span className="hidden sm:inline">Back to register</span>
               <span className="sm:hidden">Back</span>
             </Button>
             {student ? (
               <>
-                <Link to={paths.editStudent(student.id)} className={buttonClasses({})}>
+                <Link
+                  to={paths.editStudent(student.id)}
+                  state={{ registerFrom, detailFrom: currentPath(location) }}
+                  className={buttonClasses({})}
+                >
                   <Pencil className="size-4" aria-hidden="true" />
                   Edit details
                 </Link>

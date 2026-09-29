@@ -19,7 +19,7 @@ share one repository and one set of scripts at the root.
 | Area | Status |
 | --- | --- |
 | Design system (tokens, type scale, panels, controls) | done — one system across every screen |
-| Student registration and sign-in | done — JWT sessions |
+| Student registration and sign-in | done — JWT sessions, expiry explained on the sign-in screen |
 | Automatic student IDs (`CDS-YYYY-NNNN`) | done — generated server-side |
 | Add, edit, view and delete students | done — through the API |
 | Search, filtering, sorting and pagination | done — server-side |
@@ -27,6 +27,7 @@ share one repository and one set of scripts at the root.
 | Responsive layout (mobile → desktop) | done |
 | Animations and micro-interactions | done |
 | Server-side validation and error handling | done |
+| Student workflows (create, view, edit, delete, return) | done — return to the register you left |
 | MongoDB integration | done — models, indexes and the student API |
 
 ## Technology stack
@@ -88,11 +89,11 @@ shades exist and are declared there, not invented in a component: a warmer grey 
 darker warning for small text that has to stay readable on white.
 
 A handful of composite classes keep the screens consistent — `panel`, `panel-header`, `panel-body`,
-`panel-inset`, `eyebrow`, `section-heading`, `field-label` — and everything else is built from the same
-primitives in `client/src/components/ui/`: five button variants (primary, secondary, soft, ghost, danger),
-one field system with shared hover, focus, disabled and error states, a panel component with four tones,
-badges and status pills, a table that becomes cards on small screens, pagination, dialogs, toasts and
-skeletons.
+`panel-footer`, `eyebrow`, `field-label` — and everything else is built from the same primitives in
+`client/src/components/ui/`: six button variants (primary, secondary, soft, ghost, danger,
+destructive-ghost), one field system with shared hover, focus, disabled and error states, a panel
+component with four tones, badges and status pills, a table that becomes cards on small screens,
+pagination, dialogs, toasts and skeletons.
 
 ### Frontend routing
 
@@ -113,6 +114,31 @@ components. `ProtectedRoute` waits for the session to be resolved before it redi
 never flashes the wrong screen, and a render-time crash anywhere below is caught by an error boundary
 that explains itself without showing internals. API failures stay separate — they are reported beside
 whatever failed, through `utils/apiErrors.js`.
+
+### Workflows
+
+The screens are built around the jobs people do rather than around the API calls behind them.
+
+Creating a student ends on the new record, so the generated ID is visible immediately; editing saves and
+returns to the same record; deleting asks first, says what will be removed and only then calls the API,
+and lands back in the register. Every link that leaves the register carries the register's own URL, so
+**search, filters, sorting and the current page are still there when you come back** — after opening a
+student, after cancelling a form, and after a delete. That trail is validated before it is followed: only
+paths inside the application are honoured.
+
+Authentication is the same shape. The intended destination travels through the sign-in screen — query
+string included, so a filtered link survives — and the session is restored before any protected screen is
+drawn. When the API stops accepting a token the session ends and the sign-in screen says the session
+expired, rather than appearing for no reason.
+
+Forms have one lifecycle: values, per-field errors, a submit that cannot be fired twice, and a failure
+that keeps everything typed. A rejected form moves focus to the first field that needs attention, and
+server-side field errors land on the inputs they belong to. A form with uncommitted edits warns before
+the browser discards them, and Cancel confirms before throwing them away. In-app navigation is not
+blocked, because the application renders `BrowserRouter` and cannot veto a navigation from outside the
+router — the guard covers reloads, closed tabs and the form's own exit.
+
+---
 
 ## Installation
 

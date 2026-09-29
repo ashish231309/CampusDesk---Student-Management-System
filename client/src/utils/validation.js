@@ -27,18 +27,34 @@ export const maxLength = (length, message) => (value) =>
 export const oneOf = (values, message) => (value) =>
   !value || values.includes(value) ? undefined : message ?? 'Choose one of the available options.';
 
-export const url = (message = 'Enter a valid URL.') => (value) => {
-  if (!value) return undefined;
-  try {
-    const parsed = new URL(String(value).trim());
-    return ['http:', 'https:'].includes(parsed.protocol) ? undefined : message;
-  } catch {
-    return message;
-  }
-};
-
 export const pattern = (regex, message) => (value) =>
   !value || regex.test(String(value)) ? undefined : message;
+
+/**
+ * A photo reference, in exactly the shapes the API accepts: an absolute http(s)
+ * URL, a site-relative path such as `/photos/ananya.jpg`, or nothing at all
+ * (which is how a photo is cleared). Anything else — a `javascript:` URL, a
+ * stray word — is refused before the request is made.
+ */
+export const photoUrl = (message = 'Enter a link to the photo, or a path starting with /.') => (value) => {
+  const text = String(value ?? '').trim();
+  if (!text) return undefined;
+  return /^(\/|https?:\/\/)\S*$/i.test(text) ? undefined : message;
+};
+
+/**
+ * A registration date cannot be in the future — nobody is registered tomorrow.
+ * The API accepts any valid date, so this is the one place the client is
+ * deliberately stricter: it stops an obvious mistake at the field rather than
+ * storing a record that will look wrong for a year. The date input's own `max`
+ * is a hint, not a guarantee, because a typed value still gets through.
+ */
+export const notFutureDate = (message = 'Choose a date that has already happened.') => (value) => {
+  if (!value) return undefined;
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) return message;
+  return parsed.getTime() > Date.now() ? message : undefined;
+};
 
 /** Run a schema ({ field: [rules] }) over a values object. */
 export const runRules = (values, schema) => {

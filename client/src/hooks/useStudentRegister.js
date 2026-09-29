@@ -150,10 +150,39 @@ export const useStudentRegister = () => {
     }
   }, [deleteTarget, refresh, toast]);
 
+  const isFiltered = hasActiveListParams(query);
+
+  /**
+   * True while the register is answering a *search* — the state the search field
+   * reports on itself. A page change or a filter is visible in the table's own
+   * skeleton, and does not need the input to claim it is busy.
+   */
+  const isSearching = isLoading && Boolean(query.search);
+
+  /**
+   * One sentence describing what is on the screen, for the page's live region.
+   * A paginated result is already announced by `Pagination` itself, so this
+   * speaks only for the states that have no pagination to speak for them: a
+   * load in progress, a failure, and an empty register — which says whether it
+   * is empty because of the filters or because nothing has been added yet.
+   */
+  let resultSummary = '';
+
+  if (status === 'error') {
+    resultSummary = 'The register could not be loaded.';
+  } else if (isLoading) {
+    resultSummary = 'Loading students.';
+  } else if (status === 'ready' && meta && meta.total === 0) {
+    resultSummary = isFiltered
+      ? 'No students match the current search and filters.'
+      : 'The register is empty. No students have been added yet.';
+  }
+
   return {
     query,
     searchTerm,
     setSearchTerm,
+    isSearching,
     options,
     items,
     meta,
@@ -162,7 +191,8 @@ export const useStudentRegister = () => {
     errorKind,
     isLoading,
     refresh,
-    isFiltered: hasActiveListParams(query),
+    isFiltered,
+    resultSummary,
     activeFilters: describeActiveFilters(query),
     applyQuery,
     removeFilter,

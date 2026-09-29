@@ -1899,7 +1899,7 @@ await check('a database outage reads as "unavailable", not as a missing record',
 
   const described = describeLoadError(failure);
   assert(described.kind === 'unavailable', `expected an "unavailable" state, got ${described.kind}`);
-  assert(/temporarily unavailable|database/i.test(described.message), `unexpected message: ${described.message}`);
+  assert(/cannot reach its database/i.test(described.message), `unexpected message: ${described.message}`);
   assert(!/MongoServerSelectionError|ECONNREFUSED|mongodb:\/\//i.test(errorMessage(failure)), 'internals must not reach the UI');
 });
 
@@ -2709,8 +2709,10 @@ await check('the session guard and the stored token keep their single homes', ()
     'the guard should wait while the session is restored rather than redirecting',
   );
   assert(
-    guard.includes('isAuthenticated') && guard.includes('state={{ from: location }}'),
-    'and send the visitor back to where they were headed',
+    guard.includes('isAuthenticated') &&
+      guard.includes('from: location') &&
+      guard.includes('reason: sessionEndedReason'),
+    'and send the visitor back to where they were headed, explaining an expired session',
   );
   assert(!guard.includes('authToken') && !guard.includes('localStorage'), 'the guard must not read the token itself');
 
@@ -3051,6 +3053,325 @@ await check('transitions stay subtle and nothing suppresses motion globally', ()
 });
 
 // ---------------------------------------------------------------------------
+section('Authentication & student workflow (static)');
+// ---------------------------------------------------------------------------
+
+await check('the sign-in form is complete, keyboard-submittable and single-shot', () => {
+  const login = sourceOf('pages/LoginPage.jsx');
+  const button = sourceOf('components/ui/Button.jsx');
+
+  assert(login.includes('onSubmit={form.handleSubmit}') && login.includes('noValidate'), 'the form submits through the one form helper');
+  assert(login.includes('type="email"') && login.includes('autoComplete="email"'), 'the email field is typed and autofillable');
+  assert(login.includes('autoComplete="current-password"'), 'the password field is a known sign-in field to the browser');
+  assert(
+    login.includes("showPassword ? 'Hide password' : 'Show password'"),
+    'revealing the password is a labelled control rather than an unlabelled icon',
+  );
+  assert(
+    login.includes('isLoading={form.isSubmitting}'),
+    'the submit button should carry the request state',
+  );
+  assert(
+    button.includes('disabled={disabled || isLoading}'),
+    'a loading button must be genuinely disabled so a double click cannot submit twice',
+  );
+  assert(
+    (login.match(/navigate\(/g) ?? []).length === 1 && /if \(isAuthenticated\) navigate\(/.test(login),
+    'a successful sign-in should navigate exactly once, from the session change',
+  );
+  assert(
+    login.includes('from.pathname') && login.includes('from.search'),
+    'the intended destination keeps its query string, so a filtered link survives sign-in',
+  );
+  assert(login.includes('errorMessage(error)') && !login.includes('error.message'), 'failures are reported in safe words, never a raw API message');
+});
+
+await check('registration keeps the account rules the API enforces', () => {
+  const register = sourceOf('pages/RegisterPage.jsx');
+  const payload = register.slice(register.indexOf('await register({'), register.indexOf('});', register.indexOf('await register({')));
+
+  assert(register.includes("name: values.name"), 'the form sends the name');
+  assert(register.includes('email: values.email') && register.includes('password: values.password'), 'and the credentials');
+  assert(
+    !payload.includes('confirmPassword'),
+    'the confirmation field is a form-level rule and must never be sent',
+  );
+  assert(!/\brole\b\s*:/.test(payload), 'a public registration must never carry a role the API would have to ignore');
+  assert(
+    register.includes('autoComplete="new-password"'),
+    'password managers should offer to generate rather than fill',
+  );
+  assert(
+    register.includes('The two passwords do not match.') && register.includes('minLength(8'),
+    'the confirmation and password policy are checked before the round trip',
+  );
+  assert(
+    register.includes('Roles are assigned by CampusDesk') || register.includes('never by the sign-up form'),
+    'the screen says who decides roles',
+  );
+  assert(
+    (register.match(/navigate\(/g) ?? []).length === 1,
+    'creating an account navigates exactly once',
+  );
+  assert(register.includes('errorMessage(error)') && !register.includes('error.message'), 'duplicate-email and outage failures use safe wording');
+});
+
+await check('an expired session is explained rather than silently redirecting', () => {
+  const provider = sourceOf('context/AuthProvider.jsx');
+  const guard = sourceOf('components/routing/ProtectedRoute.jsx');
+  const login = sourceOf('pages/LoginPage.jsx');
+
+  assert(
+    provider.includes("setSessionEndedReason('expired')"),
+    'the provider should record why a session the API rejected ended',
+  );
+  assert(provider.includes('setSessionEndedReason(null)'), 'and forget it when a new session starts');
+  assert(
+    guard.includes('reason: sessionEndedReason'),
+    'the guard should carry that reason to the sign-in screen',
+  );
+  assert(
+    login.includes('Your session expired') && login.includes('tone="warning"'),
+    'and the sign-in screen should say so in words',
+  );
+  assert(provider.includes("endSession('signed-out')"), 'signing out always ends the local session, even if the request fails');
+  assert(
+    /finally\s*{\s*endSession\('signed-out'\)/.test(provider),
+    'and does so in a finally block, so a network failure cannot trap the user',
+  );
+});
+
+await check('every form shares one submission lifecycle', () => {
+  const form = sourceOf('hooks/useForm.js');
+
+  assert(form.includes('if (isSubmitting) return undefined;'), 'a second submit while one is in flight is refused');
+  assert(/setIsSubmitting\(true\)/.test(form) && /\.finally\(\(\) => setIsSubmitting\(false\)\)/.test(form), 'the in-flight state is always cleared');
+  assert(
+    form.includes('focusFirstInvalid(form, validationErrors, fieldOrder)'),
+    'a rejected form puts the caret on the first field that needs fixing',
+  );
+  assert(form.includes('focusFirstInvalid(form, details, fieldOrder)'), 'and does the same for field errors the API returned');
+  assert(
+    form.includes('if (control instanceof HTMLElement && !control.disabled) control.focus();'),
+    'never focusing a disabled control, which could trap the caret',
+  );
+  assert(form.includes('setSubmitError(errorMessage(error))'), 'the summary line is safe copy');
+  const failurePath = form.slice(form.indexOf('.catch((error) => {'));
+  const failureBlock = failurePath.slice(0, failurePath.indexOf('})'));
+  assert(
+    !failureBlock.includes('reset(') && !failureBlock.includes('setValues('),
+    'and a failed submit keeps what the user entered rather than clearing the form',
+  );
+  assert(
+    form.includes('setSubmitError((current) => (current === null ? current : null))'),
+    'editing a field clears the failure banner that described the previous attempt',
+  );
+
+  for (const page of ['pages/LoginPage.jsx', 'pages/RegisterPage.jsx', 'pages/StudentFormPage.jsx']) {
+    assert(sourceOf(page).includes('useForm('), `${page} should use the shared form lifecycle`);
+  }
+});
+
+await check('creating and editing a student follow one documented path', () => {
+  const page = sourceOf('pages/StudentFormPage.jsx');
+  const payload = page.slice(page.indexOf('const payload = {'), page.indexOf('const wantsNewDate'));
+
+  for (const field of ['name', 'email', 'phone', 'course', 'year', 'department', 'enrollmentStatus', 'avatarUrl']) {
+    assert(payload.includes(`${field}:`), `the payload should carry ${field}`);
+  }
+  assert(!payload.includes('studentId'), 'the client must never propose a student ID');
+  assert(
+    page.includes("if (wantsNewDate) payload.dateOfRegistration") &&
+      page.includes('else delete payload.dateOfRegistration'),
+    'the registration date is only sent when it actually changed',
+  );
+  assert(
+    page.includes('navigate(saved?.id ? paths.student(saved.id) : registerFrom'),
+    'a saved record is opened rather than merely announced',
+  );
+  assert(
+    /navigate\(saved\?\.id \? paths\.student\(saved\.id\) : registerFrom, \{\s*replace: true,\s*state: \{ registerFrom \},/m.test(page),
+    'and the register the workflow started in travels with it',
+  );
+  assert(
+    page.includes("'Student created'") && page.includes("'Student updated'"),
+    'creation and update are confirmed with their own wording',
+  );
+  assert(
+    page.includes('Could not save changes') && page.includes('Could not add student'),
+    'and failures are distinguished from successes',
+  );
+  assert(page.includes('isLoading={isBusy}') && page.includes('disabled={isBusy}'), 'the save button cannot be pressed twice');
+});
+
+await check('the form mirrors the API contract instead of inventing rules', () => {
+  const page = sourceOf('pages/StudentFormPage.jsx');
+  const rules = sourceOf('utils/validation.js');
+
+  assert(page.includes('oneOf(STUDENT_YEARS') && page.includes('COURSE_SUGGESTIONS'), 'options come from the shared domain constants the API validates against');
+  assert(
+    page.includes('photoUrl()') && rules.includes('/^(\\/|https?:\\/\\/)'),
+    'a photo link is accepted in the same shapes the API accepts, including a site-relative path',
+  );
+  assert(
+    page.includes('notFutureDate()'),
+    'a registration date in the future is refused at the field',
+  );
+  for (const label of ['Full name', 'Profile photo', 'Course', 'Year of study', 'Department', 'Email address', 'Phone number', 'Date of registration']) {
+    assert(page.includes(`label="${label}"`), `${label} should be a labelled field`);
+  }
+  assert(
+    page.includes('SegmentedControl'),
+    'the enrollment status uses the shared control rather than a raw radio group',
+  );
+  assert(
+    page.includes('Section 1') && page.includes('Section 2') && page.includes('Section 3') && page.includes('Section 4'),
+    'the form is grouped into named sections rather than one long column',
+  );
+});
+
+await check('the registration date is presented honestly, and the API stays the authority', () => {
+  const page = sourceOf('pages/StudentFormPage.jsx');
+
+  assert(
+    page.includes("const canEditRegistrationDate = !isEdit || user?.role === 'admin';"),
+    'the field is offered according to the role on the account the API returned',
+  );
+  assert(!page.includes('token') && !page.includes('jwtDecode'), 'never according to anything in the token');
+  assert(
+    page.includes('ShieldAlert') && page.includes('only an administrator can change it'),
+    'a staff account is told why the field is closed to them',
+  );
+  assert(page.includes('disabled={!canEditRegistrationDate}'), 'and the control is disabled, not merely styled as such');
+  assert(
+    page.includes('It is kept from the original') || page.includes('administrative fact'),
+    'the explanation says where the value comes from',
+  );
+  assert(
+    !page.includes('type="hidden"'),
+    'nothing about this rule relies on a hidden field — the server decides',
+  );
+});
+
+await check('unsaved edits are protected without a navigation framework', () => {
+  const guard = sourceOf('hooks/useUnsavedChanges.js');
+  const page = sourceOf('pages/StudentFormPage.jsx');
+
+  assert(guard.includes("window.addEventListener('beforeunload'"), 'a reload or closed tab warns before the work is lost');
+  assert(guard.includes("window.removeEventListener('beforeunload'"), 'and the listener is removed again');
+  assert(guard.includes('isDirty'), 'the guard is driven by whether anything actually changed');
+  assert(
+    !clientSource.includes('useBlocker') && !clientSource.includes('unstable_usePrompt'),
+    'no half-working in-app blocker is pretended — this router cannot veto a navigation',
+  );
+  assert(
+    page.includes('useUnsavedChanges(isDirty && !isSubmitting)'),
+    'a request in flight is not unsaved work',
+  );
+  assert(
+    page.includes('Discard these changes?') && page.includes('Keep editing'),
+    'Cancel asks before throwing the edits away, and offers the way back',
+  );
+  assert(page.includes('const cancelTo = isEdit'), 'leaving goes back where the user came from');
+});
+
+await check('the register links carry the register with them', () => {
+  const helper = sourceOf('routes/returnState.js');
+  const page = sourceOf('pages/StudentsPage.jsx');
+  const table = sourceOf('components/students/StudentTable.jsx');
+  const detail = sourceOf('pages/StudentDetailPage.jsx');
+  const form = sourceOf('pages/StudentFormPage.jsx');
+
+  assert(
+    helper.includes("value.startsWith('/') && !value.startsWith('//')"),
+    'only internal paths are honoured, so the trail can never become an open redirect',
+  );
+  assert(helper.includes('location.pathname') && helper.includes('location.search'), 'the trail is the whole URL, filters included');
+  assert(
+    page.includes('currentPath(location)') && page.includes('state={{ registerFrom: registerUrl }}'),
+    'the register passes its own URL to everything it opens',
+  );
+  assert(
+    (table.match(/state=\{\{ registerFrom \}\}/g) ?? []).length >= 4,
+    'every link out of a row or a card carries it — table and mobile card alike',
+  );
+  assert(
+    detail.includes('backToRegister(location)') && detail.includes('navigate(registerFrom'),
+    'the student screen returns to that register, including after a delete',
+  );
+  assert(
+    form.includes("state: { registerFrom }") && form.includes('backToStudent(location, paths.student(id))'),
+    'and saving or cancelling lands somewhere the user recognises',
+  );
+});
+
+await check('the delete flow is never optimistic and never silent', () => {
+  const register = sourceOf('hooks/useStudentRegister.js');
+  const detail = sourceOf('pages/StudentDetailPage.jsx');
+  const dialog = sourceOf('components/ui/ConfirmDialog.jsx');
+
+  assert(register.includes('await studentService.remove(deleteTarget.id)'), 'the register only reacts once the API has confirmed');
+  assert(register.includes('refresh()'), 'and then re-reads the page rather than editing it in place');
+  assert(
+    register.includes('deleteError.isNotFound') && register.includes('already removed'),
+    'a record somebody else deleted is reported as such, honestly',
+  );
+  assert(
+    !/setItems\(|items\.filter\(/.test(register),
+    'nothing removes a row locally — a failed request can never leave the list wrong',
+  );
+  assert(
+    detail.includes('if (isDeleting) return;'),
+    'the detail screen refuses a second delete while one is running',
+  );
+  assert(
+    !/finally\s*{\s*setIsDeleting\(false\);\s*setIsConfirmOpen\(false\);\s*}/.test(detail),
+    'and a failure keeps the confirmation open so the user can retry',
+  );
+  assert(dialog.includes('if (!isLoading) onClose?.();'), 'while a delete is running, Escape and the backdrop cannot dismiss it');
+  assert(dialog.includes('isLoading={isLoading}'), 'and the confirm button reports the request instead of firing again');
+  assert(
+    dialog.includes('This cannot be undone') || sourceOf('pages/StudentsPage.jsx').includes('This cannot be undone'),
+    'the confirmation states the permanence in words',
+  );
+});
+
+await check('list interaction, search feedback and recovery stay in the established architecture', () => {
+  const controller = sourceOf('hooks/useStudentRegister.js');
+  const page = sourceOf('pages/StudentsPage.jsx');
+  const search = sourceOf('components/ui/SearchInput.jsx');
+  const toolbar = sourceOf('components/students/StudentRegisterToolbar.jsx');
+
+  assert(
+    controller.includes('const isSearching = isLoading && Boolean(query.search);'),
+    'the search field is busy exactly while a search is being answered',
+  );
+  assert(
+    search.includes('aria-busy={isBusy || undefined}') && search.includes('Loader2'),
+    'and says so visually and to assistive technology',
+  );
+  assert(toolbar.includes('isBusy={isSearching}'), 'the toolbar passes the state to the control');
+  assert(
+    page.includes('aria-live="polite"') && controller.includes('resultSummary'),
+    'an empty or failed register is announced, and the wording distinguishes the two empties',
+  );
+  assert(
+    controller.includes('No students match the current search and filters.') &&
+      controller.includes('No students have been added yet.'),
+    'nothing has been added yet is not the same screen as nothing matches',
+  );
+  assert(page.includes('onRetry={register.refresh}'), 'a failed load offers a retry rather than a dead end');
+  assert(
+    page.includes('aria-busy={register.isLoading || undefined}'),
+    'and the results region reports that it is being replaced',
+  );
+  assert(
+    !controller.includes('useState({') && !controller.includes('localStorage'),
+    'no second copy of the query appeared while the interaction was refined',
+  );
+});
+
+// ---------------------------------------------------------------------------
 section('Route rendering (real components, rendered in Node — no browser)');
 // ---------------------------------------------------------------------------
 
@@ -3226,6 +3547,95 @@ await check('navigation marks the current section, and only one item at a time',
     !onCreate[0].includes(`href="${declaredPaths.students}"`),
     'and does not also light the register above it',
   );
+});
+
+// ---------------------------------------------------------------------------
+section('Workflow rendering (real components, rendered in Node — no browser)');
+// ---------------------------------------------------------------------------
+
+/** The element React emitted for a named control, so a check can read its attributes. */
+const tagFor = (html, attribute) =>
+  html.match(new RegExp(`<(?:input|select|textarea)[^>]*${attribute}[^>]*>`))?.[0] ?? '';
+const idOf = (tag) => tag.match(/id="([^"]+)"/)?.[1] ?? '';
+
+/**
+ * Whether a control is really disabled. The class list carries Tailwind's own
+ * `disabled:` variants, so the attribute has to be matched as an attribute.
+ */
+const isDisabled = (tag) => /\sdisabled(?:="")?(?=[\s/>])/.test(tag);
+
+await check('the sign-in screen is labelled, autofillable and explains an expired session', async () => {
+  const plain = await renderRoute(declaredPaths.login);
+
+  const email = tagFor(plain, 'name="email"');
+  const password = tagFor(plain, 'name="password"');
+  assert(Boolean(email) && Boolean(password), 'both credential fields should render');
+  assert(email.includes('type="email"') && /autocomplete="email"/i.test(email), 'email is typed and autofillable');
+  assert(
+    password.includes('type="password"') && /autocomplete="current-password"/i.test(password),
+    'the password field is a sign-in field to the browser',
+  );
+  assert(email.includes('autofocus'), 'the first field takes focus, so the form can be typed into immediately');
+  assert(plain.includes(`for="${idOf(email)}"`) && plain.includes(`for="${idOf(password)}"`), 'each control is named by its own label');
+  assert(plain.includes('aria-label="Show password"'), 'the reveal button is labelled');
+  assert((plain.match(/<form /g) ?? []).length === 1, 'one form, one submit');
+  assert(!plain.includes('Your session expired'), 'nothing is explained that did not happen');
+
+  const expired = await renderRoute(declaredPaths.login, {
+    state: { from: { pathname: declaredPaths.students, search: '?search=cse&page=2' }, reason: 'expired' },
+  });
+  assert(expired.includes('Your session expired'), 'a session the API rejected is explained in words');
+  assert(expired.includes('warning/35'), 'and marked as a warning rather than a failure');
+  assert(
+    expired.indexOf('Your session expired') < expired.indexOf('name="email"'),
+    'the explanation comes before the form it is about',
+  );
+
+  const redirected = await renderRoute(declaredPaths.login, {
+    state: { from: { pathname: declaredPaths.students, search: '?search=cse&page=2' } },
+  });
+  assert(redirected.includes('Sign in to continue'), 'a plain redirect says why the visitor is here');
+  assert(!redirected.includes('Your session expired'), 'without inventing an expiry');
+});
+
+await check('the create form renders its sections, its labels and a generated-ID promise', async () => {
+  const form = await renderSignedIn(declaredPaths.newStudent, 'form', { role: 'staff' });
+
+  for (const section of ['Student identity', 'Academic information', 'Contact information', 'Registration']) {
+    assert(form.includes(section), `the form should be grouped: ${section} is missing`);
+  }
+
+  for (const field of ['name', 'email', 'phone', 'course', 'year', 'department', 'dateOfRegistration', 'avatarUrl']) {
+    const tag = tagFor(form, `name="${field}"`);
+    assert(Boolean(tag), `${field} should render`);
+    assert(form.includes(`for="${idOf(tag)}"`), `${field} should be named by its own label`);
+  }
+
+  const date = tagFor(form, 'name="dateOfRegistration"');
+  assert(date.includes('type="date"') && date.includes('max='), 'the registration date cannot be picked in the future');
+  assert(!isDisabled(date), 'a staff account sets the date when the record is created');
+  assert(form.includes('CDS-') && form.includes('when the record is saved'), 'the screen says the ID is generated, not typed');
+  assert(!/\bCDS-\d{4}-\d{4}\b/.test(form), 'and shows no particular student ID while nothing has been created');
+});
+
+await check('editing presents the registration date according to the role, and hides it from staff', async () => {
+  const staff = await renderSignedIn(declaredPaths.editStudent('42'), 'edit', { role: 'staff' });
+  const staffDate = tagFor(staff, 'name="dateOfRegistration"');
+
+  assert(Boolean(staffDate), 'the edit screen renders the date field');
+  assert(isDisabled(staffDate), 'a staff account cannot change a registration date that already exists');
+  assert(
+    staff.includes('only an administrator can change it'),
+    'and is told why, instead of being left to work it out',
+  );
+  assert(staff.includes('Loading record…'), 'the record itself is still being read');
+  assert(tagFor(staff, 'name="name"').includes('value=""'), 'no student details are invented while it loads');
+
+  const admin = await renderSignedIn(declaredPaths.editStudent('42'), 'edit', { role: 'admin' });
+  const adminDate = tagFor(admin, 'name="dateOfRegistration"');
+
+  assert(Boolean(adminDate) && !isDisabled(adminDate), 'an administrator is offered the field the API lets them change');
+  assert(!admin.includes('only an administrator can change it'), 'and needs no explanation');
 });
 
 ssrBundle.cleanup();

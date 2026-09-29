@@ -9,6 +9,7 @@ import { useAuth } from '../context/authContext.js';
 import { useToast } from '../context/toastContext.js';
 import { useForm } from '../hooks/useForm.js';
 import { paths } from '../routes/paths.js';
+import { errorMessage } from '../utils/apiErrors.js';
 import { email as emailRule, maxLength, minLength, required } from '../utils/validation.js';
 
 /** Mirrors the API's password policy so the user is told before the round trip. */
@@ -46,8 +47,15 @@ export default function RegisterPage() {
   const location = useLocation();
   const [showPassword, setShowPassword] = useState(false);
 
-  const redirectTo = location.state?.from?.pathname ?? paths.dashboard;
+  /**
+   * Where the visitor was heading, query string included, so creating an account
+   * from a shared link continues to the screen that link described.
+   */
+  const from = location.state?.from;
+  const redirectTo = from ? `${from.pathname}${from.search ?? ''}` : paths.dashboard;
 
+  // The session change below is the only thing that navigates; the submit
+  // handler does not also redirect, so a new account is followed exactly once.
   useEffect(() => {
     if (isAuthenticated) navigate(redirectTo, { replace: true });
   }, [isAuthenticated, navigate, redirectTo]);
@@ -65,9 +73,8 @@ export default function RegisterPage() {
           password: values.password,
         });
         toast.success('Your account is ready. Welcome to CampusDesk.', 'Account created');
-        navigate(redirectTo, { replace: true });
       } catch (error) {
-        toast.error(error.message, 'Could not create your account');
+        toast.error(errorMessage(error), 'Could not create your account');
       }
     },
   });

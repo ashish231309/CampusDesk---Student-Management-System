@@ -28,6 +28,7 @@ const FILTER_CLASS = 'h-10 w-full text-label sm:w-auto sm:min-w-[9.5rem]';
 export const StudentRegisterToolbar = ({
   query,
   searchTerm,
+  isSearching,
   onSearchChange,
   onSearchClear,
   options,
@@ -40,8 +41,15 @@ export const StudentRegisterToolbar = ({
           value={searchTerm}
           onChange={(event) => onSearchChange(event.target.value)}
           onClear={onSearchClear}
+          isBusy={isSearching}
           placeholder="Search name, ID, email or phone…"
         />
+
+        <p className="mt-1.5 text-meta leading-relaxed text-muted">
+          Matches part of a word, and every word has to match something —{' '}
+          <span className="font-medium text-charcoal">kumar cse</span> finds a student by name and
+          course together.
+        </p>
       </div>
 
       <div className="flex flex-wrap items-center gap-x-4 gap-y-2 lg:justify-end">

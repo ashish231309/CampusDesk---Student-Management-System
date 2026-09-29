@@ -143,4 +143,38 @@ later stages, and database-backed verification wherever MongoDB is available.
   responsive construction, state design, dialog/toast patterns, subtle motion)
   and a structural render check (one h1, labelled controls, skeleton loading)
 
-## Stage 08 — Authentication & student management interface  ⏳
+## Stage 08 — Authentication & student management interface  ✅
+
+- Signing in and registering now navigate exactly once, from the session change
+  itself, and keep the whole intended destination — a shared link's query string
+  included, so a filtered register survives the sign-in
+- A token the API stops accepting is no longer a mystery: the session ends, the
+  guard carries the reason, and the sign-in screen explains that it expired
+- Every form shares one submission lifecycle: a second submit is refused while
+  one is in flight, the button is genuinely disabled, a failure keeps everything
+  typed, and a rejected form moves focus to the first field that needs fixing —
+  including fields the API rejected
+- The client's field rules now mirror the API's exactly: a photo may be a
+  site-relative path as well as an absolute URL, and a future registration date
+  is refused at the field instead of being stored
+- The register's links carry the register with them, so opening a student,
+  cancelling a form, saving a record or deleting one returns to the search,
+  filters, sort and page the user was working in; the trail is validated, so it
+  can only ever be an internal path
+- Deleting is never optimistic and never silent: the dialog stays up until the
+  API answers, Escape and the backdrop cannot dismiss it mid-request, a 404 is
+  reported as "already removed", and the register is re-read rather than patched
+- Unsaved edits are protected without a navigation framework: the browser asks
+  before a reload or a closed tab, and Cancel confirms before discarding. In-app
+  navigation is not blocked, because `BrowserRouter` cannot veto it
+- Search says what it searches and that every word must match; the field reports
+  its own busy state while a search is in flight, and an empty or failed register
+  is announced, with the two kinds of empty kept distinct
+- `npm run verify` grew to 157 checks: eleven static workflow checks (auth form
+  structure, session expiry, the shared form lifecycle, the create/edit path, the
+  API-aligned rules, the registration-date rule, the unsaved-changes guard, the
+  return trail, the delete flow, list interaction) and three that render real
+  screens in Node — the sign-in screen with an expired session, the create form's
+  sections and labels, and the edit form for staff versus an administrator
+
+## Stage 09 — Dashboard, search & filtering experience  ⏳

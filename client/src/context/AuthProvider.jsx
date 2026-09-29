@@ -17,16 +17,27 @@ export const AuthProvider = ({ children }) => {
   const [status, setStatus] = useState(() => (authToken.get() ? 'loading' : 'anonymous'));
   const [user, setUser] = useState(null);
 
+  /**
+   * Why the last session ended, when that is worth telling the user about.
+   *
+   * A token the API has stopped accepting is otherwise indistinguishable from
+   * simply being signed out: the guard redirects and the visitor is left guessing.
+   * Recording the reason here lets the sign-in screen explain itself.
+   */
+  const [sessionEndedReason, setSessionEndedReason] = useState(null);
+
   const startSession = useCallback((data) => {
     authToken.set(data.token);
     setUser(data.user ?? null);
     setStatus('authenticated');
+    setSessionEndedReason(null);
   }, []);
 
-  const endSession = useCallback(() => {
+  const endSession = useCallback((reason = null) => {
     authToken.clear();
     setUser(null);
     setStatus('anonymous');
+    setSessionEndedReason(reason);
   }, []);
 
   /** Restore the session once on mount; the token alone is not trusted. */
@@ -52,12 +63,16 @@ export const AuthProvider = ({ children }) => {
     };
   }, [endSession]);
 
-  /** An expired or rejected token anywhere in the app ends the session. */
+  /**
+   * An expired or rejected token anywhere in the app ends the session, and the
+   * visitor is told why on the way back to the sign-in screen.
+   */
   useEffect(
     () =>
       onUnauthorized(() => {
         setUser(null);
         setStatus('anonymous');
+        setSessionEndedReason('expired');
       }),
     [],
   );
@@ -91,7 +106,7 @@ export const AuthProvider = ({ children }) => {
     } catch {
       /* The session is local; a failed request must not trap the user. */
     } finally {
-      endSession();
+      endSession('signed-out');
     }
   }, [endSession]);
 
@@ -101,11 +116,12 @@ export const AuthProvider = ({ children }) => {
       isLoading: status === 'loading',
       isAuthenticated: status === 'authenticated',
       user,
+      sessionEndedReason,
       login,
       register,
       logout,
     }),
-    [login, logout, register, status, user],
+    [login, logout, register, sessionEndedReason, status, user],
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

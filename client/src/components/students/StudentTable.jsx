@@ -11,10 +11,11 @@ import { PAGE_SIZE } from '../../constants/student.js';
 import { formatDate } from '../../utils/format.js';
 import { paths } from '../../routes/paths.js';
 
-const RowActions = ({ student, onDelete, className }) => (
+const RowActions = ({ student, onDelete, registerFrom, className }) => (
   <span className={className}>
     <Link
       to={paths.student(student.id)}
+      state={{ registerFrom }}
       aria-label={`View ${student.name}`}
       title="View student"
       className={buttonClasses({ variant: 'ghost', size: 'sm', className: 'px-2' })}
@@ -23,6 +24,7 @@ const RowActions = ({ student, onDelete, className }) => (
     </Link>
     <Link
       to={paths.editStudent(student.id)}
+      state={{ registerFrom }}
       aria-label={`Edit ${student.name}`}
       title="Edit student"
       className={buttonClasses({ variant: 'ghost', size: 'sm', className: 'px-2' })}
@@ -56,6 +58,7 @@ export const StudentTable = ({
   isLoading,
   limit,
   isFiltered,
+  registerFrom,
   onDelete,
   onClearFilters,
 }) => {
@@ -66,6 +69,7 @@ export const StudentTable = ({
       render: (student) => (
         <Link
           to={paths.student(student.id)}
+          state={{ registerFrom }}
           className="group flex items-center gap-3 rounded transition-colors"
         >
           <Avatar name={student.name} size="sm" />
@@ -128,7 +132,12 @@ export const StudentTable = ({
       align: 'right',
       headerClassName: 'sr-only',
       render: (student) => (
-        <RowActions student={student} onDelete={onDelete} className="flex items-center justify-end gap-1" />
+        <RowActions
+          student={student}
+          onDelete={onDelete}
+          registerFrom={registerFrom}
+          className="flex items-center justify-end gap-1"
+        />
       ),
     },
   ];
@@ -148,6 +157,7 @@ export const StudentTable = ({
             <div className="min-w-0 flex-1">
               <Link
                 to={paths.student(student.id)}
+                state={{ registerFrom }}
                 className="block truncate text-subheading font-semibold text-ink"
               >
                 {student.name}
@@ -186,12 +196,17 @@ export const StudentTable = ({
           </dl>
 
           <div className="mt-3.5 flex items-center justify-end gap-1 border-t border-line/60 pt-3">
-            <Link to={paths.student(student.id)} className={buttonClasses({ variant: 'ghost', size: 'sm' })}>
+            <Link
+              to={paths.student(student.id)}
+              state={{ registerFrom }}
+              className={buttonClasses({ variant: 'ghost', size: 'sm' })}
+            >
               <Eye className="size-4" aria-hidden="true" />
               View
             </Link>
             <Link
               to={paths.editStudent(student.id)}
+              state={{ registerFrom }}
               className={buttonClasses({ variant: 'ghost', size: 'sm' })}
             >
               <Pencil className="size-4" aria-hidden="true" />

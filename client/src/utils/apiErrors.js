@@ -16,7 +16,7 @@ const MESSAGES = {
   404: 'That record could not be found. It may have been removed.',
   429: 'Too many requests just now. Please wait a moment and try again.',
   500: 'Something went wrong on our end. Please try again.',
-  503: 'The register is temporarily unavailable — the database cannot be reached. Please try again shortly.',
+  503: 'CampusDesk cannot reach its database right now. Please try again shortly.',
 };
 
 const NETWORK_MESSAGE =

@@ -9,6 +9,7 @@ import { useAuth } from '../context/authContext.js';
 import { useToast } from '../context/toastContext.js';
 import { useForm } from '../hooks/useForm.js';
 import { paths } from '../routes/paths.js';
+import { errorMessage } from '../utils/apiErrors.js';
 import { email as emailRule, required } from '../utils/validation.js';
 
 /**
@@ -22,14 +23,26 @@ const schema = {
 };
 
 export default function LoginPage() {
-  const { login, isAuthenticated } = useAuth();
+  const { login, isAuthenticated, sessionEndedReason } = useAuth();
   const toast = useToast();
   const navigate = useNavigate();
   const location = useLocation();
   const [showPassword, setShowPassword] = useState(false);
 
-  const redirectTo = location.state?.from?.pathname ?? paths.dashboard;
+  /**
+   * Where the visitor was heading. `search` is kept as well as `pathname`: a
+   * shared register link carries its search, filters and page in the query
+   * string, and signing in should land on that screen rather than a reset one.
+   */
+  const from = location.state?.from;
+  const redirectTo = from ? `${from.pathname}${from.search ?? ''}` : paths.dashboard;
+  const endReason = location.state?.reason ?? sessionEndedReason;
 
+  /**
+   * One navigation, in one place. Signing in changes the session, this effect
+   * sees it and leaves — the submit handler does not also navigate, so a success
+   * cannot be acted on twice.
+   */
   useEffect(() => {
     if (isAuthenticated) navigate(redirectTo, { replace: true });
   }, [isAuthenticated, navigate, redirectTo]);
@@ -41,12 +54,11 @@ export default function LoginPage() {
       try {
         await login(values);
         toast.success('Welcome back to CampusDesk.', 'Signed in');
-        navigate(redirectTo, { replace: true });
       } catch (error) {
-        // `useForm` also merges any field-level `details` the API sent back, so
-        // a validation failure lands on the input and a rejected sign-in is
-        // explained in one sentence.
-        toast.error(error.message, 'Sign in failed');
+        // `useForm` also merges any field-level `details` the API sent back and
+        // keeps the entered values, so a validation failure lands on the input
+        // and a rejected sign-in is explained in one sentence.
+        toast.error(errorMessage(error), 'Sign in failed');
       }
     },
   });
@@ -58,7 +70,18 @@ export default function LoginPage() {
         Use the campus account you registered on this desk.
       </p>
 
-      {form.submitError ? <FormAlert className="mt-6">{form.submitError}</FormAlert> : null}
+      {endReason === 'expired' ? (
+        <FormAlert tone="warning" className="mt-6">
+          Your session expired, so you were signed out to keep the register safe. Sign in again to
+          carry on where you left off.
+        </FormAlert>
+      ) : from ? (
+        <FormAlert tone="info" className="mt-6">
+          Sign in to continue to the page you asked for.
+        </FormAlert>
+      ) : null}
+
+      {form.submitError ? <FormAlert className="mt-4">{form.submitError}</FormAlert> : null}
 
       <form className="mt-6 space-y-4" onSubmit={form.handleSubmit} noValidate>
         <Field label="Email address" required error={form.errorFor('email')}>
@@ -66,6 +89,7 @@ export default function LoginPage() {
             type="email"
             name="email"
             autoComplete="email"
+            autoFocus
             placeholder="you@campusdesk.edu"
             value={form.values.email}
             onChange={form.handleChange('email')}
@@ -122,7 +146,6 @@ export default function LoginPage() {
           Create an account
         </Link>
       </p>
-
     </>
   );
 }

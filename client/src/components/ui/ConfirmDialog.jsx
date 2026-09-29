@@ -10,6 +10,10 @@ import { Button } from './Button.jsx';
  * ways that do not depend on colour alone (the warning icon, the wording, and a
  * filled danger button), and keeps the confirm button disabled while the request
  * is in flight so an action cannot be fired twice.
+ *
+ * Once the request is running, the dialog is committed: Escape, the backdrop and
+ * the close button are ignored until it answers, so a delete cannot be "cancelled"
+ * halfway through by a stray click and leave the user unsure whether it happened.
  */
 export const ConfirmDialog = ({
   open,
@@ -24,13 +28,20 @@ export const ConfirmDialog = ({
 }) => (
   <Modal
     open={open}
-    onClose={onClose}
+    onClose={() => {
+      if (!isLoading) onClose?.();
+    }}
     title={title}
     size="sm"
     tone={tone}
     footer={
       <>
-        <Button variant="secondary" onClick={onClose} disabled={isLoading}>
+        <Button
+          variant="secondary"
+          onClick={onClose}
+          disabled={isLoading}
+          className={isLoading ? 'pointer-events-none' : undefined}
+        >
           {cancelLabel}
         </Button>
         <Button

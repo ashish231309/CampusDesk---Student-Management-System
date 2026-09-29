@@ -1,4 +1,4 @@
-import { Link } from 'react-router-dom';
+import { Link, useLocation } from 'react-router-dom';
 import { UserPlus } from 'lucide-react';
 
 import { PageHeader } from '../components/layout/PageHeader.jsx';
@@ -12,6 +12,7 @@ import { Pagination } from '../components/ui/Pagination.jsx';
 import { ErrorState } from '../components/ui/States.jsx';
 import { errorMessage } from '../utils/apiErrors.js';
 import { useStudentRegister } from '../hooks/useStudentRegister.js';
+import { currentPath } from '../routes/returnState.js';
 import { paths } from '../routes/paths.js';
 
 /**
@@ -21,9 +22,15 @@ import { paths } from '../routes/paths.js';
  * holds it) and the three feature components below it draw the controls, the
  * active filters and the rows. Nothing here holds a second copy of the query, so
  * reload, back/forward and shared links keep working exactly as they did.
+ *
+ * Every link that leaves this screen carries the register's own URL — search,
+ * filters, sort and page included — so coming back from a student, or from
+ * adding one, returns to the register the user was working in.
  */
 export default function StudentsPage() {
   const register = useStudentRegister();
+  const location = useLocation();
+  const registerUrl = currentPath(location);
 
   return (
     <>
@@ -31,7 +38,11 @@ export default function StudentsPage() {
         title="Students"
         description="Every record on the register. Search, filter and open a student to see their full details."
         actions={
-          <Link to={paths.newStudent} className={buttonClasses({ size: 'md' })}>
+          <Link
+            to={paths.newStudent}
+            state={{ registerFrom: registerUrl }}
+            className={buttonClasses({ size: 'md' })}
+          >
             <UserPlus className="size-4" aria-hidden="true" />
             Add student
           </Link>
@@ -42,6 +53,7 @@ export default function StudentsPage() {
         <StudentRegisterToolbar
           query={register.query}
           searchTerm={register.searchTerm}
+          isSearching={register.isSearching}
           onSearchChange={register.setSearchTerm}
           onSearchClear={() => register.setSearchTerm('')}
           options={register.options}
@@ -54,6 +66,12 @@ export default function StudentsPage() {
           onClearAll={register.clearFilters}
         />
 
+        {/* The visual result is the table itself; this is the same information
+            for anyone who cannot see it change under a new search or filter. */}
+        <p className="sr-only" role="status" aria-live="polite">
+          {register.resultSummary}
+        </p>
+
         {register.status === 'error' ? (
           <ErrorState
             title={
@@ -65,12 +83,13 @@ export default function StudentsPage() {
             onRetry={register.refresh}
           />
         ) : (
-          <>
+          <div aria-busy={register.isLoading || undefined}>
             <StudentTable
               students={register.items}
               isLoading={register.isLoading}
               limit={register.query.limit}
               isFiltered={register.isFiltered}
+              registerFrom={registerUrl}
               onDelete={register.requestDelete}
               onClearFilters={register.clearFilters}
             />
@@ -84,7 +103,7 @@ export default function StudentsPage() {
                 onPageChange={(page) => register.applyQuery({ page })}
               />
             ) : null}
-          </>
+          </div>
         )}
       </Card>
 
