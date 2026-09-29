@@ -11,7 +11,6 @@ import {
 } from 'lucide-react';
 
 import { PageHeader } from '../components/layout/PageHeader.jsx';
-import { PageTransition } from '../components/motion/PageTransition.jsx';
 import { Avatar } from '../components/ui/Avatar.jsx';
 import { StatusPill } from '../components/ui/Badge.jsx';
 import { buttonClasses } from '../components/ui/buttonStyles.js';
@@ -47,7 +46,7 @@ export default function DashboardPage() {
   const maxDepartmentCount = Math.max(...summary.byDepartment.map((row) => row.count), 1);
 
   return (
-    <PageTransition>
+    <>
       <PageHeader
         title={`${greetingFor(new Date().getHours())}, ${displayName}`}
         description={`${today} · here is how the register is looking.`}
@@ -273,6 +272,6 @@ export default function DashboardPage() {
           </Card>
         </div>
       </div>
-    </PageTransition>
+    </>
   );
 }

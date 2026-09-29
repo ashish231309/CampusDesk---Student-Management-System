@@ -5,10 +5,27 @@ import { Compass } from 'lucide-react';
 import { Logo } from '../components/branding/Logo.jsx';
 import { buttonClasses } from '../components/ui/buttonStyles.js';
 import { paths } from '../routes/paths.js';
+import { useAuth } from '../context/authContext.js';
+import { cx } from '../utils/cx.js';
 
-export default function NotFoundPage() {
+/**
+ * The not-found screen.
+ *
+ * The same page is used twice: on its own for a URL that belongs to no part of
+ * the application, and inside the signed-in shell when the route exists but the
+ * page behind it does not — which is why it asks for its variant rather than
+ * assuming a full viewport.
+ */
+export default function NotFoundPage({ variant = 'standalone' }) {
+  const { isAuthenticated } = useAuth();
+
   return (
-    <div className="grid min-h-dvh place-items-center bg-canvas px-4">
+    <div
+      className={cx(
+        'grid place-items-center px-4',
+        variant === 'app' ? 'py-10' : 'min-h-dvh bg-canvas',
+      )}
+    >
       <motion.div
         initial={{ opacity: 0, y: 16 }}
         animate={{ opacity: 1, y: 0 }}
@@ -31,8 +48,8 @@ export default function NotFoundPage() {
         </p>
 
         <div className="mt-7 flex flex-col gap-2 sm:flex-row sm:justify-center">
-          <Link to={paths.dashboard} className={buttonClasses({})}>
-            Go to dashboard
+          <Link to={isAuthenticated ? paths.dashboard : paths.login} className={buttonClasses({})}>
+            {isAuthenticated ? 'Go to dashboard' : 'Sign in'}
           </Link>
           <Link to={paths.home} className={buttonClasses({ variant: 'secondary' })}>
             Back to home

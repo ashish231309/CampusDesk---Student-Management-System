@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Link, useNavigate, useParams } from 'react-router-dom';
+import { Link, useLocation, useNavigate, useParams } from 'react-router-dom';
 import {
   ArrowLeft,
   BookOpen,
@@ -15,7 +15,6 @@ import {
 } from 'lucide-react';
 
 import { PageHeader } from '../components/layout/PageHeader.jsx';
-import { PageTransition } from '../components/motion/PageTransition.jsx';
 import { Avatar } from '../components/ui/Avatar.jsx';
 import { StatusPill } from '../components/ui/Badge.jsx';
 import { Button } from '../components/ui/Button.jsx';
@@ -26,10 +25,13 @@ import { EmptyState, ErrorState } from '../components/ui/States.jsx';
 import { Skeleton } from '../components/ui/Skeleton.jsx';
 import { useToast } from '../context/toastContext.js';
 import { errorMessage } from '../utils/apiErrors.js';
+import { useDocumentTitle } from '../hooks/useDocumentTitle.js';
 import { useStudent } from '../hooks/useStudent.js';
 import { studentService } from '../services/studentService.js';
 import { formatDate, formatRelative } from '../utils/format.js';
+import { appConfig } from '../config/app.js';
 import { paths } from '../routes/paths.js';
+import { routeCrumbs } from '../routes/routeMeta.js';
 
 const DetailRow = ({ icon: Icon, label, children }) => (
   <div className="flex items-start gap-3 px-5 py-3.5">
@@ -46,9 +48,14 @@ const DetailRow = ({ icon: Icon, label, children }) => (
 
 export default function StudentDetailPage() {
   const { id } = useParams();
+  const { pathname } = useLocation();
   const navigate = useNavigate();
   const toast = useToast();
   const { student, status, error, errorKind, refresh } = useStudent(id);
+
+  // The tab says the student's name once the record has arrived, and the route's
+  // own title until then.
+  useDocumentTitle(student?.name ? `${student.name} · ${appConfig.name}` : undefined);
 
   const [isConfirmOpen, setIsConfirmOpen] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
@@ -74,10 +81,10 @@ export default function StudentDetailPage() {
 
   if (status === 'missing') {
     return (
-      <PageTransition>
+      <>
         <PageHeader
           title="Student not found"
-          breadcrumbs={[{ label: 'Students', to: paths.students }, { label: 'Not found' }]}
+          breadcrumbs={[...routeCrumbs(pathname), { label: 'Not found' }]}
         />
         <Card>
           <EmptyState
@@ -91,7 +98,7 @@ export default function StudentDetailPage() {
             }
           />
         </Card>
-      </PageTransition>
+      </>
     );
   }
 
@@ -99,10 +106,10 @@ export default function StudentDetailPage() {
   // or a lost connection is not the same thing as "no such student".
   if (status === 'error') {
     return (
-      <PageTransition>
+      <>
         <PageHeader
           title="Student"
-          breadcrumbs={[{ label: 'Students', to: paths.students }, { label: 'Unavailable' }]}
+          breadcrumbs={[...routeCrumbs(pathname), { label: 'Unavailable' }]}
         />
         <Card>
           <ErrorState
@@ -115,17 +122,14 @@ export default function StudentDetailPage() {
             onRetry={refresh}
           />
         </Card>
-      </PageTransition>
+      </>
     );
   }
 
   return (
-    <PageTransition>
+    <>
       <PageHeader
-        breadcrumbs={[
-          { label: 'Students', to: paths.students },
-          { label: student?.name ?? 'Student' },
-        ]}
+        breadcrumbs={[...routeCrumbs(pathname), { label: student?.name ?? 'Student' }]}
         title={student?.name ?? 'Loading student…'}
         description={
           student
@@ -296,6 +300,6 @@ export default function StudentDetailPage() {
         }
         confirmLabel="Delete student"
       />
-    </PageTransition>
+    </>
   );
 }

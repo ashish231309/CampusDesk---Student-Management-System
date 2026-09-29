@@ -1,9 +1,8 @@
 import { useEffect } from 'react';
-import { Link, useNavigate, useParams } from 'react-router-dom';
+import { Link, useLocation, useNavigate, useParams } from 'react-router-dom';
 import { CircleAlert, IdCard, Save, Sparkles, UserRound } from 'lucide-react';
 
 import { PageHeader } from '../components/layout/PageHeader.jsx';
-import { PageTransition } from '../components/motion/PageTransition.jsx';
 import { Button } from '../components/ui/Button.jsx';
 import { buttonClasses } from '../components/ui/buttonStyles.js';
 import { Card, CardBody, CardHeader } from '../components/ui/Card.jsx';
@@ -25,6 +24,7 @@ import {
 } from '../constants/student.js';
 import { email as emailRule, maxLength, minLength, oneOf, phone as phoneRule, required, url } from '../utils/validation.js';
 import { paths } from '../routes/paths.js';
+import { routeCrumbs } from '../routes/routeMeta.js';
 
 /** Mirrors the API's student validators so problems surface before the request. */
 const schema = {
@@ -56,6 +56,8 @@ const EMPTY_STUDENT = {
 export default function StudentFormPage({ mode = 'create' }) {
   const isEdit = mode === 'edit';
   const { id } = useParams();
+  const { pathname } = useLocation();
+  const crumbs = routeCrumbs(pathname);
   const navigate = useNavigate();
   const toast = useToast();
   const { user } = useAuth();
@@ -133,10 +135,10 @@ export default function StudentFormPage({ mode = 'create' }) {
 
   if (isEdit && studentStatus === 'error') {
     return (
-      <PageTransition>
+      <>
         <PageHeader
           title="Student unavailable"
-          breadcrumbs={[{ label: 'Students', to: paths.students }, { label: 'Unavailable' }]}
+          breadcrumbs={[...crumbs.slice(0, -1), { label: 'Unavailable' }]}
         />
         <Card>
           <ErrorState
@@ -145,16 +147,16 @@ export default function StudentFormPage({ mode = 'create' }) {
             onRetry={refresh}
           />
         </Card>
-      </PageTransition>
+      </>
     );
   }
 
   if (isEdit && studentStatus === 'missing') {
     return (
-      <PageTransition>
+      <>
         <PageHeader
           title="Student not found"
-          breadcrumbs={[{ label: 'Students', to: paths.students }, { label: 'Not found' }]}
+          breadcrumbs={[...crumbs.slice(0, -1), { label: 'Not found' }]}
         />
         <Card>
           <EmptyState
@@ -168,17 +170,19 @@ export default function StudentFormPage({ mode = 'create' }) {
             }
           />
         </Card>
-      </PageTransition>
+      </>
     );
   }
 
   const isBusy = form.isSubmitting || (isEdit && studentStatus === 'loading');
 
   return (
-    <PageTransition>
+    <>
       <PageHeader
+        // Editing drops the generic "Student" crumb in favour of the record's
+        // name, which is the same place in the trail.
         breadcrumbs={[
-          { label: 'Students', to: paths.students },
+          ...(isEdit ? crumbs.slice(0, -1) : crumbs),
           ...(isEdit ? [{ label: student?.name ?? 'Student', to: paths.student(id) }] : []),
           { label: isEdit ? 'Edit' : 'New student' },
         ]}
@@ -418,6 +422,6 @@ export default function StudentFormPage({ mode = 'create' }) {
           </Card>
         </div>
       </form>
-    </PageTransition>
+    </>
   );
 }

@@ -47,18 +47,19 @@ CampusDesk/
 │   └── src/
 │       ├── components/
 │       │   ├── branding/       logo mark and wordmark
-│       │   ├── layout/         app shell: sidebar, top bar, page header
+│       │   ├── layout/         the shells: app shell, public/auth shell, top bar, sidebar
 │       │   ├── motion/         shared page-transition wrapper
-│       │   ├── routing/        protected routes, scroll restoration
+│       │   ├── routing/        route guard, error boundary, not-found route, scroll
+│       │   ├── students/       register toolbar, active filters, student table
 │       │   └── ui/             reusable primitives (buttons, cards, table, modal, toasts…)
-│       ├── config/             app configuration and navigation
+│       ├── config/             app configuration, navigation and the public panel copy
 │       ├── constants/          student domain options
 │       ├── context/            authentication and notification providers
-│       ├── hooks/              form, search, count-up and data hooks
+│       ├── hooks/              data hooks, form helper and the register controller
 │       ├── pages/              one file per route
-│       ├── routes/             route table and path constants
+│       ├── routes/             route table, route metadata and path constants
 │       ├── services/           API client and endpoint wrappers
-│       └── utils/              formatting, validation and class helpers
+│       └── utils/              formatting, validation, query-state and class helpers
 ├── server/                     Express REST API
 │   ├── scripts/                verification suites (offline and database-backed)
 │   └── src/
@@ -75,6 +76,26 @@ CampusDesk/
 ├── package.json                workspace scripts
 └── README.md
 ```
+
+### Frontend routing
+
+The client is one router with three groups, and every URL in it is described once, in
+`client/src/routes/routeMeta.js` — its path, its document title, whether it is public, and the label the
+interface shows for it. Titles, the top bar and the breadcrumb trails all read from there, so a new
+screen is added in two places: the metadata and the router.
+
+| Group | Routes | Shell |
+| --- | --- | --- |
+| Public | `/`, `/login`, `/register` | landing page has its own marketing shell; the two account pages share `PublicLayout` |
+| Signed in | `/dashboard`, `/students`, `/students/new`, `/students/:studentId`, `/students/:studentId/edit` | `ProtectedRoute` → `AppLayout` (sidebar, top bar, content area, footer) |
+| Anything else | any unmatched URL | the not-found page, on its own for a visitor and inside the shell for a signed-in user |
+
+Pages are only their own content: the shell owns the frame, the skip link, the entry transition and the
+wait for a code-split page, and the register page composes a controller hook with three presentational
+components. `ProtectedRoute` waits for the session to be resolved before it redirects, so a refresh
+never flashes the wrong screen, and a render-time crash anywhere below is caught by an error boundary
+that explains itself without showing internals. API failures stay separate — they are reported beside
+whatever failed, through `utils/apiErrors.js`.
 
 ## Installation
 
@@ -243,7 +264,9 @@ stubbed, so it runs anywhere — including registration, sign-in, token verifica
 forged tokens, the role rules and the removal of the old preview sign-in. It also bundles the
 client's own data layer (the same bundler Vite uses) and runs it against that API, so the checks
 cover the request the browser actually sends: its search, filters, sort, page, session header and
-error handling. `npm run verify:db` is the
+error handling. The route tree is rendered as well — the real components, server-rendered in Node, so
+the suite can show which screen each URL produces and that an anonymous visitor never sees a signed-in
+one. `npm run verify:db` is the
 one that proves the database behaviour — accounts and hashed passwords, sign-in against a stored
 hash, student creation, generated IDs under concurrent writes, search, filters, sorting, pagination,
 statistics and deletion. It uses `VERIFY_MONGODB_URI` if you set one, otherwise your `MONGODB_URI` with the

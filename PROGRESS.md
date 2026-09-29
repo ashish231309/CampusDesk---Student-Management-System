@@ -92,4 +92,31 @@ later stages, and database-backed verification wherever MongoDB is available.
   page size, cancellation, stale-response protection); `npm run verify:db` gained
   multi-term, options and last-page-delete checks
 
-## Stage 06 — Frontend foundation & routing  ⏳
+## Stage 06 — Frontend foundation & routing  ✅
+
+- Every URL is described once, in `routes/routeMeta.js`: its path, its document
+  title, whether it is public, and the label the interface uses. Tab titles, the
+  top bar and the student breadcrumb trails now come from there
+- The router has three clear groups — public pages, the signed-in application
+  behind the guard and inside the shell, and one catch-all that answers
+  everything else. The account pages share a `PublicLayout`; the landing page
+  keeps its own marketing shell
+- The shell owns the frame, a "skip to content" link, the entry transition and
+  the wait for a code-split page, so pages are only their own content and no page
+  carries layout or routing responsibility any more
+- The register page went from 486 lines to 106: one controller hook owns the URL
+  state it always did, and three components draw the toolbar, the active-filter
+  chips and the rows
+- A URL that matches nothing is answered according to the session: the plain
+  not-found page for a visitor, the same page inside the shell for a signed-in
+  user, and the session is resolved before either is drawn
+- A render-time crash is now caught by an error boundary that explains itself,
+  offers a reload and a way back, and never shows internals
+- The blanket `prefers-reduced-motion` rule that silenced every animation and
+  transition has been removed; motion is decided where it is used
+- `npm run verify` grew to 132 checks, including five that render the real route
+  tree in Node: anonymous visitors see no signed-in screen, a stored session
+  shows the loader rather than the page, and the navigation marks exactly one
+  section at a time
+
+## Stage 07 — CampusDesk design system & responsive UI  ⏳

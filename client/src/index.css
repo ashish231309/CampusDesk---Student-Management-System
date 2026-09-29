@@ -95,16 +95,16 @@
   @apply outline-none focus-visible:ring-2 focus-visible:ring-charcoal/30 focus-visible:ring-offset-2 focus-visible:ring-offset-canvas;
 }
 
+/*
+  Motion is handled where it is used — components ask Motion's `useReducedMotion`
+  and choose a calmer entrance themselves. There is deliberately no blanket rule
+  here: a global `animation-duration: 0.01ms !important` would silently disarm
+  every animation in the product, including the ones a later stage adds on
+  purpose. Only smooth scrolling is switched off, because a long smooth scroll is
+  the one effect that cannot be made gentler from inside a component.
+*/
 @media (prefers-reduced-motion: reduce) {
   html {
     scroll-behavior: auto;
-  }
-
-  *,
-  *::before,
-  *::after {
-    animation-duration: 0.01ms !important;
-    animation-iteration-count: 1 !important;
-    transition-duration: 0.01ms !important;
   }
 }

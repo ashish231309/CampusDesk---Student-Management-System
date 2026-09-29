@@ -1,46 +1,49 @@
-import { NavLink } from 'react-router-dom';
+import { Link, useLocation } from 'react-router-dom';
 import { motion, useReducedMotion } from 'motion/react';
 import { X } from 'lucide-react';
 
 import { Logo } from '../branding/Logo.jsx';
 import { IconButton } from '../ui/Button.jsx';
-import { navigationGroups } from '../../config/navigation.js';
+import { isNavigationItemActive, navigationGroups } from '../../config/navigation.js';
 import { appConfig } from '../../config/app.js';
 import { cx } from '../../utils/cx.js';
 
-const NavItem = ({ item, onNavigate, layoutGroup }) => (
-  <NavLink
-    to={item.to}
-    end={item.end}
-    onClick={onNavigate}
-    className={({ isActive }) =>
-      cx(
+/**
+ * One navigation link. Active state comes from the shared rule in
+ * `config/navigation.js` rather than from the router's own prefix matching, so
+ * styling and `aria-current` always agree and nested student routes behave.
+ */
+const NavItem = ({ item, onNavigate, layoutGroup, pathname }) => {
+  const isActive = isNavigationItemActive(item, pathname);
+
+  return (
+    <Link
+      to={item.to}
+      onClick={onNavigate}
+      aria-current={isActive ? 'page' : undefined}
+      className={cx(
         'focus-ring group relative flex items-center gap-3 rounded-field px-3 py-2.5 text-sm font-medium transition-colors duration-150',
         isActive ? 'text-ink' : 'text-charcoal/80 hover:bg-beige/45 hover:text-ink',
-      )
-    }
-  >
-    {({ isActive }) => (
-      <>
-        {isActive ? (
-          <motion.span
-            layoutId={`sidebar-active-${layoutGroup}`}
-            className="absolute inset-0 -z-10 rounded-field bg-beige"
-            transition={{ type: 'spring', stiffness: 420, damping: 34 }}
-          />
-        ) : null}
-
-        <item.icon
-          className={cx('size-[18px] shrink-0', isActive ? 'text-charcoal' : 'text-muted')}
-          aria-hidden="true"
+      )}
+    >
+      {isActive ? (
+        <motion.span
+          layoutId={`sidebar-active-${layoutGroup}`}
+          className="absolute inset-0 -z-10 rounded-field bg-beige"
+          transition={{ type: 'spring', stiffness: 420, damping: 34 }}
         />
-        {item.label}
-      </>
-    )}
-  </NavLink>
-);
+      ) : null}
 
-const SidebarContent = ({ onNavigate, layoutGroup, onClose }) => (
+      <item.icon
+        className={cx('size-[18px] shrink-0', isActive ? 'text-charcoal' : 'text-muted')}
+        aria-hidden="true"
+      />
+      {item.label}
+    </Link>
+  );
+};
+
+const SidebarContent = ({ onNavigate, layoutGroup, onClose, pathname }) => (
   <div className="flex h-full flex-col gap-8 px-4 py-5">
     <div className="flex items-center justify-between">
       <Logo tagline />
@@ -57,7 +60,12 @@ const SidebarContent = ({ onNavigate, layoutGroup, onClose }) => (
           <ul className="space-y-1">
             {group.items.map((item) => (
               <li key={item.to}>
-                <NavItem item={item} onNavigate={onNavigate} layoutGroup={layoutGroup} />
+                <NavItem
+                  item={item}
+                  onNavigate={onNavigate}
+                  layoutGroup={layoutGroup}
+                  pathname={pathname}
+                />
               </li>
             ))}
           </ul>
@@ -80,11 +88,12 @@ const SidebarContent = ({ onNavigate, layoutGroup, onClose }) => (
  */
 export const Sidebar = ({ isOpen, onClose }) => {
   const prefersReducedMotion = useReducedMotion();
+  const { pathname } = useLocation();
 
   return (
     <>
       <aside className="fixed inset-y-0 left-0 z-40 hidden w-[264px] border-r border-line/70 bg-surface lg:block">
-        <SidebarContent layoutGroup="desktop" />
+        <SidebarContent layoutGroup="desktop" pathname={pathname} />
       </aside>
 
       {isOpen ? (
@@ -104,7 +113,12 @@ export const Sidebar = ({ isOpen, onClose }) => {
             className="fixed inset-y-0 left-0 z-50 w-[282px] max-w-[85vw] border-r border-line/70 bg-surface shadow-raised"
             aria-label="Navigation drawer"
           >
-            <SidebarContent layoutGroup="mobile" onNavigate={onClose} onClose={onClose} />
+            <SidebarContent
+              layoutGroup="mobile"
+              onNavigate={onClose}
+              onClose={onClose}
+              pathname={pathname}
+            />
           </motion.aside>
         </div>
       ) : null}

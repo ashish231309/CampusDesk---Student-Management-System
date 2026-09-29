@@ -1554,8 +1554,11 @@ section('Client data layer (real client modules against the real API)');
  * `apiClient`, `studentService` and the error mapper are built as one graph, so
  * they share a single module instance — the session state and the
  * `onUnauthorized` listeners are the same ones the application uses.
+ *
+ * `root` and `platform` exist for the route-rendering checks further down, which
+ * bundle the server-side entry point instead of a client module.
  */
-const bundleClient = async (entries, { baseUrl }) => {
+const bundleClient = async (entries, { baseUrl, root = '../../client/src/', platform = 'browser' } = {}) => {
   const { rolldown } = await import('rolldown');
   const directory = new URL('../.client-bundle/', import.meta.url);
 
@@ -1563,10 +1566,18 @@ const bundleClient = async (entries, { baseUrl }) => {
     input: Object.fromEntries(
       Object.entries(entries).map(([name, relative]) => [
         name,
-        new URL(`../../client/src/${relative}`, import.meta.url).pathname,
+        new URL(`${root}${relative}`, import.meta.url).pathname,
       ]),
     ),
-    platform: 'browser',
+    platform,
+    // React Router ships a `"use client"` directive that means nothing outside a
+    // React framework; only this script ever imports the bundle.
+    onLog: (level, log, defaultHandler) => {
+      // React Router's `"use client"` directive and the harness entry importing
+      // pages the router also lazy-loads are both irrelevant to a Node bundle.
+      if (['MODULE_LEVEL_DIRECTIVE', 'INEFFECTIVE_DYNAMIC_IMPORT'].includes(log.code)) return;
+      defaultHandler(level, log);
+    },
   });
 
   const { output } = await bundle.generate({ format: 'esm' });
@@ -1584,6 +1595,15 @@ const bundleClient = async (entries, { baseUrl }) => {
   globalThis.__CLIENT_ENV__ = { VITE_API_BASE_URL: baseUrl, VITE_API_TIMEOUT_MS: '15000' };
   globalThis.window ??= {};
   globalThis.window.location = { origin: 'http://localhost' };
+  // Motion asks whether it is in a browser and then listens for resizes. These
+  // bundles run outside one, so the hooks exist as no-ops rather than missing.
+  globalThis.window.matchMedia ??= () => ({
+    matches: false,
+    addEventListener() {},
+    removeEventListener() {},
+  });
+  globalThis.window.addEventListener ??= () => {};
+  globalThis.window.removeEventListener ??= () => {};
   globalThis.window.localStorage ??= (() => {
     const store = new Map();
     return {
@@ -2348,6 +2368,499 @@ await check('the login and registration pages share one authentication state', (
   assert(provider.includes('onUnauthorized'), 'the provider should react to a rejected token');
   assert(routes.includes('paths.register'), 'the registration route should be public');
 });
+
+// ---------------------------------------------------------------------------
+section('Frontend routing, shell & page boundaries');
+// ---------------------------------------------------------------------------
+
+/**
+ * `routeMeta` is plain data with no JSX in it, so it can be bundled and run here
+ * — these checks therefore exercise the same matching code the browser uses,
+ * rather than a copy of it kept alongside the test.
+ */
+const routingBundle = await bundleClient({ routeMeta: 'routes/routeMeta.js', paths: 'routes/paths.js' }, {
+  baseUrl: `${stubUrl}/api`,
+});
+
+const { matchRouteMeta, routeCrumbs, routeMeta, routeTitle } = routingBundle.loaded.routeMeta;
+const { notFound: notFoundPath, paths: declaredPaths } = routingBundle.loaded.paths;
+
+const collectClientFiles = (directory, prefix = '') =>
+  readdirSync(directory, { withFileTypes: true }).flatMap((entry) => {
+    const child = new URL(`${entry.name}${entry.isDirectory() ? '/' : ''}`, directory);
+    const name = `${prefix}${entry.name}`;
+    if (entry.isDirectory()) return collectClientFiles(child, `${name}/`);
+    return /\.(js|jsx)$/.test(entry.name) ? [[name, readFileSync(child, 'utf8')]] : [];
+  });
+
+const clientFiles = collectClientFiles(clientRoot);
+const sourceOf = (name) => clientFiles.find(([file]) => file === name)?.[1] ?? '';
+
+await check('every route in the application is described by route metadata', () => {
+  const declared = [
+    declaredPaths.home,
+    declaredPaths.login,
+    declaredPaths.register,
+    declaredPaths.dashboard,
+    declaredPaths.students,
+    declaredPaths.newStudent,
+    declaredPaths.student(),
+    declaredPaths.editStudent(),
+  ];
+
+  for (const path of declared) {
+    assert(
+      routeMeta.some((entry) => entry.path === path),
+      `no route metadata for ${path}`,
+    );
+  }
+
+  assert(routeMeta.at(-1).path === notFoundPath, 'the catch-all must be matched last');
+  assert(
+    new Set(routeMeta.map((entry) => entry.title)).size === routeMeta.length,
+    'route titles should be distinct — a tab title has to say which screen it is',
+  );
+
+  for (const entry of routeMeta) {
+    assert(Boolean(entry.title) && Boolean(entry.label), `${entry.path} needs a title and a label`);
+    assert(['public', 'protected'].includes(entry.scope), `${entry.path} needs a public/protected scope`);
+    assert(entry.title.includes('CampusDesk'), `the title for ${entry.path} should name the product`);
+  }
+
+  const protectedRoutes = routeMeta.filter((entry) => entry.scope === 'protected');
+  assert(protectedRoutes.length === 5, `five routes sit behind the session, got ${protectedRoutes.length}`);
+});
+
+await check('a URL resolves to the most specific route, and unknown URLs to the catch-all', () => {
+  const id = '6502a1b2c3d4e5f60718293a';
+
+  const detail = matchRouteMeta(declaredPaths.student(id));
+  assert(detail.label === 'Student', `a student URL should resolve to the detail route, got ${detail.label}`);
+  assert(detail.scope === 'protected' && detail.params.id === id, 'the id should be captured from the URL');
+
+  const newStudent = matchRouteMeta(declaredPaths.newStudent);
+  assert(newStudent.label === 'Add student', 'the static route must win over the dynamic one');
+  assert(newStudent.params.id === undefined, 'and must not be read as a student id');
+
+  assert(matchRouteMeta(declaredPaths.editStudent('42')).label === 'Edit student', 'the edit route should resolve');
+  assert(matchRouteMeta(declaredPaths.students).label === 'Students', 'the register should resolve');
+  assert(matchRouteMeta(declaredPaths.dashboard).scope === 'protected', 'the dashboard is a signed-in route');
+  assert(matchRouteMeta('/').scope === 'public', 'the landing page is public');
+
+  const missing = matchRouteMeta('/students/42/transcripts');
+  assert(missing.path === notFoundPath, `an unknown URL should fall to the catch-all, got ${missing.path}`);
+  assert(
+    routeTitle(declaredPaths.students) === 'Students · CampusDesk',
+    `unexpected document title: ${routeTitle(declaredPaths.students)}`,
+  );
+});
+
+await check('nested student URLs keep their place in the breadcrumb trail', () => {
+  const trail = routeCrumbs('/students/42/edit');
+
+  assert(trail.length === 2, `an edit URL has two ancestors, got ${trail.length}`);
+  assert(trail[0].label === 'Students' && trail[0].to === '/students', 'the first crumb is the register');
+  assert(
+    trail[1].label === 'Student' && trail[1].to === '/students/42',
+    'the parent crumb should keep the record id rather than the pattern',
+  );
+
+  assert(routeCrumbs('/students/42').length === 1, 'a detail URL sits directly under the register');
+  assert(routeCrumbs('/students/42')[0].to === '/students', 'and links back to it');
+  assert(routeCrumbs('/dashboard').length === 0, 'top-level pages have no ancestors');
+
+  assert(
+    sourceOf('pages/StudentDetailPage.jsx').includes('routeCrumbs(pathname)'),
+    'the detail page should take its trail from the metadata',
+  );
+  assert(
+    sourceOf('pages/StudentFormPage.jsx').includes('routeCrumbs(pathname)'),
+    'the form should take its trail from the metadata',
+  );
+});
+
+await check('the router renders the routes the metadata describes', () => {
+  const routes = sourceOf('routes/AppRoutes.jsx');
+
+  for (const reference of [
+    'paths.home',
+    'paths.login',
+    'paths.register',
+    'paths.dashboard',
+    'paths.students',
+    'paths.newStudent',
+    'paths.student()',
+    'paths.editStudent()',
+  ]) {
+    assert(routes.includes(reference), `AppRoutes should render ${reference}`);
+  }
+
+  assert(
+    routes.includes('<ProtectedRoute />') && routes.includes('<AppLayout />'),
+    'the signed-in area should sit behind the guard and inside the shell',
+  );
+  assert(routes.includes('<PublicLayout />'), 'the account pages should share the public shell');
+  assert(routes.includes('useDocumentTitle()'), 'the route titles should be applied from the metadata');
+  assert(
+    sourceOf('hooks/useDocumentTitle.js').includes('document.title = resolved'),
+    'the title hook should write the resolved title to the document',
+  );
+  assert(
+    routes.includes('<Route path="*" element={<NotFoundRoute />} />'),
+    'unknown URLs should end at the session-aware catch-all',
+  );
+  assert(
+    routes.includes("import { NotFoundRoute }") && !routes.includes("import('../pages/NotFoundPage.jsx')"),
+    'the not-found screen should never wait on a code-split chunk',
+  );
+});
+
+await check('the shell owns the frame, the skip link and the page transition', () => {
+  const layout = sourceOf('components/layout/AppLayout.jsx');
+
+  assert(layout.includes('<Sidebar') && layout.includes('<Topbar'), 'the shell draws the navigation frame');
+  assert(layout.includes('id="main-content"'), 'the content area should be addressable');
+  assert(layout.includes('Skip to content'), 'keyboard users should be able to jump past the navigation');
+  assert(layout.includes('<Outlet') && layout.includes('children ??'), 'the shell draws the route or its own children');
+  assert(
+    layout.includes('<Suspense fallback={<ContentLoader />}>'),
+    'a code-split page should wait inside the shell, not replace it',
+  );
+  assert(
+    layout.includes('<PageTransition key={routePattern}>'),
+    'the entry transition belongs to the shell and is keyed by the route pattern',
+  );
+
+  for (const page of [
+    'pages/StudentsPage.jsx',
+    'pages/DashboardPage.jsx',
+    'pages/StudentDetailPage.jsx',
+    'pages/StudentFormPage.jsx',
+  ]) {
+    assert(!sourceOf(page).includes('PageTransition'), `${page} should not carry the shell's transition`);
+  }
+
+  for (const [name, source] of clientFiles.filter(([file]) => file.startsWith('pages/'))) {
+    assert(
+      !source.includes('<Sidebar') && !source.includes('<Outlet') && !source.includes('<Route '),
+      `${name} should not do the shell's or the router's job`,
+    );
+  }
+
+  assert(
+    sourceOf('components/layout/Topbar.jsx').includes('matchRouteMeta(pathname).label'),
+    'the top bar should name the screen from the route metadata',
+  );
+});
+
+await check('a render crash is contained and explained without internals', () => {
+  const boundary = sourceOf('components/routing/AppErrorBoundary.jsx');
+  const app = sourceOf('App.jsx');
+
+  assert(boundary.includes('getDerivedStateFromError'), 'the boundary should catch render errors');
+  assert(
+    boundary.includes('componentDidUpdate') && boundary.includes('resetKey'),
+    'navigating away should clear a crashed screen instead of showing the fallback over it',
+  );
+  assert(
+    !boundary.includes('error.stack') && !boundary.includes('{error.message}'),
+    'the fallback must not render the error itself',
+  );
+  assert(
+    !/from '[^']*apiErrors\.js'/.test(boundary) && !/from '[^']*toastContext\.js'/.test(boundary),
+    'a render failure is not an API failure — the two stay apart',
+  );
+  assert(
+    boundary.includes('window.location.reload') && boundary.includes('paths.dashboard'),
+    'the fallback should offer a reload and a way back',
+  );
+
+  assert(app.indexOf('<BrowserRouter>') < app.indexOf('<RouteErrorBoundary>'), 'the boundary needs the router for its links');
+  assert(
+    app.indexOf('<RouteErrorBoundary>') < app.indexOf('<ToastProvider>'),
+    'the boundary should sit above the providers so a crash in either is caught',
+  );
+});
+
+await check('an unknown URL is answered according to the session', () => {
+  const route = sourceOf('components/routing/NotFoundRoute.jsx');
+  const page = sourceOf('pages/NotFoundPage.jsx');
+
+  assert(route.includes('useAuth('), 'the catch-all should ask who is asking');
+  assert(
+    route.includes('isLoading') && route.includes('PageLoader'),
+    'and wait rather than flash the wrong screen at a signed-in visitor',
+  );
+  assert(route.includes('<AppLayout'), 'a signed-in visitor should get the shell and its navigation');
+  assert(route.includes('<NotFoundPage />'), 'an anonymous visitor should get the plain not-found page');
+
+  assert(page.includes('paths.dashboard') && page.includes('paths.home'), 'the page should offer a way back into the application');
+  assert(!page.includes('apiErrors') && !page.includes('stack'), 'a missing page is not an API failure and never shows internals');
+});
+
+await check('the student register is one controller and three views', () => {
+  const page = sourceOf('pages/StudentsPage.jsx');
+  const controller = sourceOf('hooks/useStudentRegister.js');
+
+  for (const view of [
+    'components/students/StudentRegisterToolbar.jsx',
+    'components/students/ActiveFilterChips.jsx',
+    'components/students/StudentTable.jsx',
+  ]) {
+    assert(
+      clientFiles.some(([name]) => name === view),
+      `${view} should exist`,
+    );
+
+    const source = sourceOf(view);
+    assert(!source.includes('useSearchParams') && !source.includes('setSearchParams'), `${view} must not own the URL state`);
+    assert(!/\bfetch\(/.test(source) && !source.includes('studentService'), `${view} must not call the API`);
+  }
+
+  for (const view of ['StudentRegisterToolbar', 'ActiveFilterChips', 'StudentTable']) {
+    assert(page.includes(view), `the register page should compose ${view}`);
+  }
+
+  assert(
+    !page.includes('useSearchParams') && !page.includes('readStudentListQuery'),
+    'the page must not parse the URL itself — that logic has one home',
+  );
+  assert(page.includes('useStudentRegister()'), 'the register state should come from one controller');
+  assert(!page.includes('studentService') && !/\bfetch\(/.test(page), 'a page must not talk to the API directly');
+  assert(
+    page.split('\n').length < 140,
+    `the register page should be composition rather than everything at once, got ${page.split('\n').length} lines`,
+  );
+
+  assert(
+    controller.includes('readStudentListQuery') && controller.includes('writeStudentListQuery'),
+    'the URL should stay the single source of truth for the register',
+  );
+  assert(
+    controller.includes('useSearchParams') && !controller.includes('useState({'),
+    'the controller should be the one place the query is read, with no second copy of it',
+  );
+  assert(
+    controller.includes('useDebouncedValue') && controller.includes('SEARCH_DEBOUNCE_MS = 320'),
+    'search should still be debounced, at the same 320ms',
+  );
+});
+
+await check('nothing in the foundation disarms the animation work', () => {
+  const css = readFileSync(new URL('index.css', clientRoot), 'utf8');
+  // Comments explain why the rule is absent; only real declarations count here.
+  const declarations = css.replace(/\/\*[\s\S]*?\*\//g, '');
+
+  assert(css.includes('prefers-reduced-motion'), 'the reduced-motion query itself should stay');
+  assert(
+    !/animation-duration:\s*0?\.0*1ms/i.test(declarations),
+    'a blanket animation kill would suppress every animation in the product, including the intended ones',
+  );
+  assert(!/transition-duration:\s*0?\.0*1ms/i.test(declarations), 'and it would take transitions with it');
+
+  const reducedMotionBlock = css.slice(css.indexOf('prefers-reduced-motion'));
+  assert(!reducedMotionBlock.includes('!important'), 'the reduced-motion block must not override durations globally');
+  assert(reducedMotionBlock.includes('scroll-behavior: auto'), 'smooth scrolling is the one effect still switched off');
+
+  assert(
+    sourceOf('components/layout/AppLayout.jsx').includes('PageTransition'),
+    'the shell should be ready for the motion stage',
+  );
+  assert(
+    sourceOf('components/motion/PageTransition.jsx').includes('useReducedMotion'),
+    'motion should be decided where it is used',
+  );
+});
+
+await check('no new frontend dependency was introduced', () => {
+  const manifest = JSON.parse(readFileSync(new URL('../../client/package.json', import.meta.url), 'utf8'));
+  const dependencies = { ...manifest.dependencies, ...manifest.devDependencies };
+
+  const banned = [
+    'redux',
+    'react-redux',
+    'zustand',
+    'jotai',
+    'recoil',
+    'mobx',
+    '@tanstack/react-query',
+    'swr',
+    'react-hook-form',
+    'formik',
+    'framer-motion',
+    'styled-components',
+  ];
+
+  for (const name of banned) {
+    assert(!(name in dependencies), `${name} should not have been added`);
+  }
+
+  for (const name of ['react-router-dom', 'motion', 'gsap']) {
+    assert(name in dependencies, `${name} should still be how this is done`);
+  }
+});
+
+await check('the session guard and the stored token keep their single homes', () => {
+  const guard = sourceOf('components/routing/ProtectedRoute.jsx');
+
+  assert(
+    guard.includes('isLoading') && guard.includes('PageLoader'),
+    'the guard should wait while the session is restored rather than redirecting',
+  );
+  assert(
+    guard.includes('isAuthenticated') && guard.includes('state={{ from: location }}'),
+    'and send the visitor back to where they were headed',
+  );
+  assert(!guard.includes('authToken') && !guard.includes('localStorage'), 'the guard must not read the token itself');
+
+  for (const [name, source] of clientFiles) {
+    if (name === 'services/apiClient.js') continue;
+    assert(!/localStorage/.test(source), `${name} should not touch the stored token`);
+    assert(!/atob\(|jwtDecode/.test(source), `${name} should not decode the token`);
+  }
+});
+
+routingBundle.cleanup();
+
+// ---------------------------------------------------------------------------
+section('Route rendering (real components, rendered in Node — no browser)');
+// ---------------------------------------------------------------------------
+
+/**
+ * The route tree is rendered here with the same React code the browser runs, so
+ * "an anonymous visitor is never shown a signed-in screen" is decided by the
+ * components themselves rather than by reading their source.
+ *
+ * It is not a browser: only a first render happens, so effects — and therefore
+ * every request — never run, and there is no layout engine. What it does prove is
+ * which screen a URL produces and what that screen contains.
+ */
+const ssrBundle = await bundleClient(
+  { ssr: 'ssr-entry.js' },
+  { baseUrl: `${stubUrl}/api`, root: './', platform: 'node' },
+);
+
+const { renderRoute, renderSignedIn } = ssrBundle.loaded.ssr;
+
+/** The application's own token store, which the harness has already shimmed. */
+const storeToken = (value) => {
+  const storage = globalThis.window.localStorage;
+  storage.removeItem('campusdesk.auth.token');
+  if (value) storage.setItem('campusdesk.auth.token', value);
+};
+
+/** Every navigation link the shell currently marks as the page you are on. */
+const currentNavigationLinks = (html) =>
+  [...html.matchAll(/<a[^>]*aria-current="page"[^>]*>/g)].map((match) => match[0]);
+
+await check('each public page renders inside the shared public shell', async () => {
+  const landing = await renderRoute(declaredPaths.home);
+  assert(landing.includes(`href="${declaredPaths.login}"`), 'the landing page should offer a way in');
+  assert(!landing.includes('Skip to content'), 'and is not part of the signed-in shell');
+
+  const login = await renderRoute(declaredPaths.login);
+  assert(login.includes('Sign in to CampusDesk'), 'the sign-in screen should render');
+  assert(
+    login.includes('The register your campus actually keeps up with.'),
+    'inside the shared brand panel',
+  );
+  assert(login.includes('Email address') && login.includes('Password'), 'with its labelled fields');
+  assert(login.includes(`href="${declaredPaths.register}"`), 'and a way to create an account');
+
+  const register = await renderRoute(declaredPaths.register);
+  assert(register.includes('Create your CampusDesk account'), 'the registration screen should render');
+  assert(register.includes('Two minutes now, a tidy register later.'), 'with its own panel copy');
+  assert(register.includes('Confirm password'), 'and the fields the API expects');
+});
+
+await check('an anonymous visitor is never shown a signed-in screen', async () => {
+  storeToken(null);
+
+  for (const url of [
+    declaredPaths.dashboard,
+    declaredPaths.students,
+    declaredPaths.newStudent,
+    declaredPaths.student('6502a1b2c3d4e5f60718293a'),
+  ]) {
+    const html = await renderRoute(url);
+
+    assert(!html.includes('id="main-content"'), `${url} must not render the application shell`);
+    assert(!html.includes('Main navigation'), `${url} must not render the navigation`);
+    assert(!html.includes('Checking your session'), `${url} needs no session check without a token`);
+  }
+
+  const missing = await renderRoute('/not-a-page');
+  assert(missing.includes('not on the register'), 'an unknown URL should render the not-found page');
+  assert(missing.includes(`href="${declaredPaths.home}"`), 'which offers a way back to the public site');
+  assert(!missing.includes('id="main-content"'), 'and no part of the signed-in shell');
+});
+
+await check('a stored session shows the loader, not the page, until it is resolved', async () => {
+  storeToken('stub-token');
+
+  for (const url of [declaredPaths.dashboard, declaredPaths.students]) {
+    const html = await renderRoute(url);
+
+    assert(html.includes('Checking your session'), `${url} should wait for the session to be resolved`);
+    assert(
+      !html.includes('id="main-content"'),
+      `${url} must not draw the application before the session is known`,
+    );
+  }
+
+  const missing = await renderRoute('/not-a-page');
+  assert(missing.includes('Checking your session'), 'the not-found screen waits for it too');
+
+  storeToken(null);
+});
+
+await check('a signed-in visitor gets the shell, the navigation and the page', async () => {
+  const html = await renderSignedIn(declaredPaths.students, 'students');
+
+  assert(html.includes('Skip to content'), 'keyboard users should be able to skip the navigation');
+  assert(html.includes('id="main-content"'), 'the content area should be in the shell');
+  assert(html.includes('Main navigation'), 'the sidebar should render as a navigation landmark');
+  assert(
+    html.includes(`href="${declaredPaths.dashboard}"`) && html.includes(`href="${declaredPaths.newStudent}"`),
+    'with the application routes',
+  );
+  assert(html.includes('Ananya Sharma'), 'and the signed-in user');
+  assert(html.includes('Search by name, ID, email or course'), 'the register toolbar should render');
+  assert(html.includes('Rows per page'), 'including the page-size control');
+  assert(!html.includes('Sign in to CampusDesk'), 'and no trace of the sign-in screen');
+
+  const dashboard = await renderSignedIn(declaredPaths.dashboard, 'dashboard');
+  assert(dashboard.includes('id="main-content"'), 'the dashboard renders in the same shell');
+
+  const detail = await renderSignedIn(declaredPaths.student('42'), 'detail');
+  assert(detail.includes(`href="${declaredPaths.students}"`), 'a student screen links back to the register');
+
+  const form = await renderSignedIn(declaredPaths.newStudent, 'form');
+  assert(form.includes('Full name') && form.includes('Email address'), 'the create form renders its fields');
+});
+
+await check('navigation marks the current section, and only one item at a time', async () => {
+  const register = await renderSignedIn(declaredPaths.students, 'students');
+  const onRegister = currentNavigationLinks(register);
+  assert(onRegister.length === 1, `exactly one item should be current, got ${onRegister.length}`);
+  assert(onRegister[0].includes(`href="${declaredPaths.students}"`), 'the register is current on /students');
+
+  const detail = await renderSignedIn(declaredPaths.student('42'), 'detail');
+  const onDetail = currentNavigationLinks(detail);
+  assert(onDetail.length === 1, 'a nested student URL still lights exactly one item');
+  assert(onDetail[0].includes(`href="${declaredPaths.students}"`), 'and it is the register, not nothing');
+
+  const create = await renderSignedIn(declaredPaths.newStudent, 'form');
+  const onCreate = currentNavigationLinks(create);
+  assert(onCreate.length === 1, 'adding a student lights exactly one item');
+  assert(onCreate[0].includes(`href="${declaredPaths.newStudent}"`), 'the add-student item');
+  assert(
+    !onCreate[0].includes(`href="${declaredPaths.students}"`),
+    'and does not also light the register above it',
+  );
+});
+
+ssrBundle.cleanup();
 
 // ---------------------------------------------------------------------------
 stubServer.close();
