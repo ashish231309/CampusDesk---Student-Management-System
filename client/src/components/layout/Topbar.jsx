@@ -9,13 +9,17 @@ import { matchRouteMeta } from '../../routes/routeMeta.js';
 import { paths } from '../../routes/paths.js';
 
 /**
- * The top bar names the screen the user is on. The name comes from the route
- * metadata, so a nested URL such as `/students/42/edit` says what it is instead
- * of falling back to the section above it.
+ * The application header: where you are, what this screen is, and the two things
+ * you might want from anywhere — adding a student and your account.
+ *
+ * The name comes from the route metadata, so a nested URL such as
+ * `/students/42/edit` says what it is instead of falling back to the section
+ * above it. On a phone the primary action keeps its icon and drops its label so
+ * the bar never has to scroll sideways.
  */
 export const Topbar = ({ onOpenNavigation }) => {
   const { pathname } = useLocation();
-  const section = matchRouteMeta(pathname).label ?? appConfig.name;
+  const route = matchRouteMeta(pathname);
 
   return (
     <header className="sticky top-0 z-30 border-b border-line/70 bg-canvas/85 backdrop-blur-md">
@@ -28,18 +32,31 @@ export const Topbar = ({ onOpenNavigation }) => {
         />
 
         <div className="min-w-0 flex-1">
-          <p className="text-[11px] font-semibold tracking-wider text-muted uppercase">
-            {appConfig.name}
-          </p>
-          <h1 className="truncate text-[15px] leading-tight font-semibold text-ink">{section}</h1>
+          <p className="eyebrow">{appConfig.name}</p>
+          <h1 className="truncate text-subheading leading-tight font-semibold text-ink">
+            {route.label ?? appConfig.name}
+          </h1>
         </div>
 
         <Link
           to={paths.newStudent}
-          className={buttonClasses({ variant: 'primary', size: 'sm', className: 'hidden sm:inline-flex' })}
+          aria-label="Add student"
+          className={buttonClasses({
+            variant: 'primary',
+            size: 'sm',
+            className: 'hidden sm:inline-flex',
+          })}
         >
           <Plus className="size-4" aria-hidden="true" />
           Add student
+        </Link>
+
+        <Link
+          to={paths.newStudent}
+          aria-label="Add student"
+          className={buttonClasses({ size: 'icon', className: 'size-9 sm:hidden' })}
+        >
+          <Plus className="size-4" aria-hidden="true" />
         </Link>
 
         <UserMenu />

@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'react';
+import { useCallback, useEffect, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import { AnimatePresence, motion } from 'motion/react';
 import { X } from 'lucide-react';
@@ -12,10 +12,16 @@ const SIZES = {
   lg: 'max-w-2xl',
 };
 
+const FOCUSABLE =
+  'a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])';
+
 /**
- * Accessible dialog: Escape closes, the page behind stops scrolling, focus
- * moves into the panel on open and animation is handled by Motion so the
- * transition matches the rest of the app.
+ * Accessible dialog.
+ *
+ * Escape closes it, the page behind stops scrolling, focus moves into the panel
+ * on open and returns to whatever opened it on close, and Tab is kept inside the
+ * panel while it is up. The panel is a bottom sheet on phones and a centred card
+ * from small screens up, which is the shape each size actually wants.
  */
 export const Modal = ({
   open,
@@ -31,13 +37,39 @@ export const Modal = ({
   const titleId = 'campusdesk-modal-title';
   const descriptionId = 'campusdesk-modal-description';
 
+  const handleKeyDown = useCallback(
+    (event) => {
+      if (event.key === 'Escape') {
+        onClose?.();
+        return;
+      }
+
+      if (event.key !== 'Tab' || !panelRef.current) return;
+
+      const focusable = [...panelRef.current.querySelectorAll(FOCUSABLE)].filter(
+        (element) => element.offsetParent !== null,
+      );
+      if (!focusable.length) return;
+
+      const first = focusable[0];
+      const last = focusable[focusable.length - 1];
+      const active = document.activeElement;
+
+      if (event.shiftKey && (active === first || !panelRef.current.contains(active))) {
+        event.preventDefault();
+        last.focus();
+      } else if (!event.shiftKey && active === last) {
+        event.preventDefault();
+        first.focus();
+      }
+    },
+    [onClose],
+  );
+
   useEffect(() => {
     if (!open) return undefined;
 
-    const handleKeyDown = (event) => {
-      if (event.key === 'Escape') onClose?.();
-    };
-
+    const previouslyFocused = document.activeElement;
     const previousOverflow = document.body.style.overflow;
     document.body.style.overflow = 'hidden';
     document.addEventListener('keydown', handleKeyDown);
@@ -46,8 +78,11 @@ export const Modal = ({
     return () => {
       document.body.style.overflow = previousOverflow;
       document.removeEventListener('keydown', handleKeyDown);
+      if (previouslyFocused instanceof HTMLElement && document.contains(previouslyFocused)) {
+        previouslyFocused.focus();
+      }
     };
-  }, [open, onClose]);
+  }, [handleKeyDown, open]);
 
   if (typeof document === 'undefined') return null;
 
@@ -80,17 +115,17 @@ export const Modal = ({
               exit={{ opacity: 0, y: 12, scale: 0.985 }}
               transition={{ type: 'spring', stiffness: 320, damping: 30 }}
               className={cx(
-                'pointer-events-auto w-full rounded-card border border-line/70 bg-surface shadow-raised outline-none',
+                'pointer-events-auto w-full rounded-panel border border-line/70 bg-surface shadow-overlay outline-none',
                 SIZES[size] ?? SIZES.md,
               )}
             >
-              <header className="flex items-start justify-between gap-4 border-b border-line/60 px-5 py-4">
+              <header className="flex items-start justify-between gap-4 border-b border-line/60 px-panel py-4">
                 <div className="min-w-0">
-                  <h2 id={titleId} className="text-base font-semibold text-ink">
+                  <h2 id={titleId} className="text-heading font-semibold text-ink">
                     {title}
                   </h2>
                   {description ? (
-                    <p id={descriptionId} className="mt-1 text-[13px] leading-relaxed text-muted">
+                    <p id={descriptionId} className="mt-1 text-label leading-relaxed text-muted">
                       {description}
                     </p>
                   ) : null}
@@ -99,12 +134,12 @@ export const Modal = ({
                 <IconButton icon={X} label="Close dialog" onClick={onClose} />
               </header>
 
-              {children ? <div className="px-5 py-4">{children}</div> : null}
+              {children ? <div className="px-panel py-4">{children}</div> : null}
 
               {footer ? (
                 <footer
                   className={cx(
-                    'flex flex-col-reverse gap-2 border-t border-line/60 px-5 py-4 sm:flex-row sm:justify-end',
+                    'flex flex-col-reverse gap-2 border-t border-line/60 px-panel py-4 sm:flex-row sm:justify-end',
                     tone === 'danger' && 'bg-danger/[0.04]',
                   )}
                 >

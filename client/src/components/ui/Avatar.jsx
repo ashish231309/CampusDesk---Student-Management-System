@@ -2,7 +2,7 @@ import { cx } from '../../utils/cx.js';
 import { getInitials } from '../../utils/format.js';
 
 const SIZES = {
-  xs: 'size-8 text-[11px]',
+  xs: 'size-8 text-micro',
   sm: 'size-9 text-xs',
   md: 'size-11 text-sm',
   lg: 'size-16 text-lg',

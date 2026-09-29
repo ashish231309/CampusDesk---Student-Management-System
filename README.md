@@ -18,6 +18,7 @@ share one repository and one set of scripts at the root.
 
 | Area | Status |
 | --- | --- |
+| Design system (tokens, type scale, panels, controls) | done — one system across every screen |
 | Student registration and sign-in | done — JWT sessions |
 | Automatic student IDs (`CDS-YYYY-NNNN`) | done — generated server-side |
 | Add, edit, view and delete students | done — through the API |
@@ -76,6 +77,22 @@ CampusDesk/
 ├── package.json                workspace scripts
 └── README.md
 ```
+
+### Design system
+
+The interface is composed from tokens rather than from per-page choices. `client/src/index.css` holds the
+whole system: the approved palette (beige `#DDD0C8` and dark grey `#323232` carry the identity, with a
+small set for enrolment status and feedback), a type scale from `text-display` to `text-micro`, a spacing
+rhythm (`px-gutter`, `px-panel`, `mt-section`), three radii and three levels of elevation. Two derived
+shades exist and are declared there, not invented in a component: a warmer grey for quiet strips, and a
+darker warning for small text that has to stay readable on white.
+
+A handful of composite classes keep the screens consistent — `panel`, `panel-header`, `panel-body`,
+`panel-inset`, `eyebrow`, `section-heading`, `field-label` — and everything else is built from the same
+primitives in `client/src/components/ui/`: five button variants (primary, secondary, soft, ghost, danger),
+one field system with shared hover, focus, disabled and error states, a panel component with four tones,
+badges and status pills, a table that becomes cards on small screens, pagination, dialogs, toasts and
+skeletons.
 
 ### Frontend routing
 

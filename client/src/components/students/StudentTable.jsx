@@ -11,9 +11,41 @@ import { PAGE_SIZE } from '../../constants/student.js';
 import { formatDate } from '../../utils/format.js';
 import { paths } from '../../routes/paths.js';
 
+const RowActions = ({ student, onDelete, className }) => (
+  <span className={className}>
+    <Link
+      to={paths.student(student.id)}
+      aria-label={`View ${student.name}`}
+      title="View student"
+      className={buttonClasses({ variant: 'ghost', size: 'sm', className: 'px-2' })}
+    >
+      <Eye className="size-4" aria-hidden="true" />
+    </Link>
+    <Link
+      to={paths.editStudent(student.id)}
+      aria-label={`Edit ${student.name}`}
+      title="Edit student"
+      className={buttonClasses({ variant: 'ghost', size: 'sm', className: 'px-2' })}
+    >
+      <Pencil className="size-4" aria-hidden="true" />
+    </Link>
+    <IconButton
+      icon={Trash2}
+      label={`Delete ${student.name}`}
+      onClick={() => onDelete(student)}
+      className="size-9 hover:bg-danger/10 hover:text-danger"
+    />
+  </span>
+);
+
 /**
  * The register itself: a table on wide screens and a card per row on narrow
  * ones, both showing the same fields and the same actions.
+ *
+ * The two representations are designed for their own context rather than
+ * shrunk from one another. The table reads down a column — identity, course,
+ * year, status, registration — while the card leads with who the student is and
+ * keeps the actions reachable at the bottom where a thumb actually is.
  *
  * It is presentational — the rows come from the API through the register hook,
  * and the two things it can *do* (open the delete confirmation, clear the
@@ -38,28 +70,36 @@ export const StudentTable = ({
         >
           <Avatar name={student.name} size="sm" />
           <span className="min-w-0">
-            <span className="block truncate text-[13px] font-semibold text-ink group-hover:underline group-hover:underline-offset-4">
+            <span className="block truncate text-body font-semibold text-ink group-hover:underline group-hover:underline-offset-4">
               {student.name}
             </span>
-            <span className="block truncate text-[12px] text-muted">{student.studentId}</span>
+            <span className="block truncate text-meta text-muted">{student.studentId}</span>
           </span>
         </Link>
       ),
     },
     {
       key: 'course',
-      header: 'Course & department',
+      header: 'Course',
       render: (student) => (
-        <span className="block max-w-[240px]">
-          <span className="block truncate text-[13px] text-charcoal">{student.course}</span>
-          <span className="block truncate text-[12px] text-muted">{student.department}</span>
+        <span className="block max-w-[15rem]">
+          <span className="block truncate text-label font-medium text-charcoal">
+            {student.course}
+          </span>
+          <span className="block truncate text-meta text-muted">{student.department}</span>
         </span>
       ),
     },
     {
       key: 'year',
       header: 'Year',
-      render: (student) => <span className="text-[13px] text-charcoal">{student.year}</span>,
+      // Optional columns only appear once the table is genuinely wide enough;
+      // the mobile card carries every field regardless.
+      headerClassName: 'hidden xl:table-cell',
+      cellClassName: 'hidden xl:table-cell',
+      render: (student) => (
+        <span className="text-label whitespace-nowrap text-charcoal">{student.year}</span>
+      ),
     },
     {
       key: 'status',
@@ -74,8 +114,10 @@ export const StudentTable = ({
     {
       key: 'registered',
       header: 'Registered',
+      headerClassName: 'hidden xl:table-cell',
+      cellClassName: 'hidden xl:table-cell',
       render: (student) => (
-        <span className="text-[13px] whitespace-nowrap text-muted">
+        <span className="text-label whitespace-nowrap text-muted">
           {formatDate(student.dateOfRegistration)}
         </span>
       ),
@@ -86,30 +128,7 @@ export const StudentTable = ({
       align: 'right',
       headerClassName: 'sr-only',
       render: (student) => (
-        <span className="flex items-center justify-end gap-1">
-          <Link
-            to={paths.student(student.id)}
-            aria-label={`View ${student.name}`}
-            title="View student"
-            className={buttonClasses({ variant: 'ghost', size: 'icon' })}
-          >
-            <Eye className="size-4" aria-hidden="true" />
-          </Link>
-          <Link
-            to={paths.editStudent(student.id)}
-            aria-label={`Edit ${student.name}`}
-            title="Edit student"
-            className={buttonClasses({ variant: 'ghost', size: 'icon' })}
-          >
-            <Pencil className="size-4" aria-hidden="true" />
-          </Link>
-          <IconButton
-            icon={Trash2}
-            label={`Delete ${student.name}`}
-            onClick={() => onDelete(student)}
-            className="hover:bg-danger/10 hover:text-danger"
-          />
-        </span>
+        <RowActions student={student} onDelete={onDelete} className="flex items-center justify-end gap-1" />
       ),
     },
   ];
@@ -122,49 +141,70 @@ export const StudentTable = ({
       columns={columns}
       getRowKey={(student) => student.id}
       renderMobileCard={(student) => (
-        <div className="flex items-start gap-3 px-4 py-4">
-          <Avatar name={student.name} size="md" />
+        <article className="px-panel py-4">
+          <div className="flex items-start gap-3">
+            <Avatar name={student.name} size="md" />
 
-          <div className="min-w-0 flex-1">
-            <Link
-              to={paths.student(student.id)}
-              className="truncate text-[14px] font-semibold text-ink hover:underline hover:underline-offset-4"
-            >
-              {student.name}
-            </Link>
-            <p className="mt-0.5 truncate text-[12px] text-muted">
-              {student.studentId} · {student.year}
-            </p>
-            <p className="mt-1 truncate text-[12px] text-muted">{student.course}</p>
-
-            <div className="mt-2.5 flex items-center justify-between gap-2">
-              <StatusPill status={student.enrollmentStatus} />
-
-              <span className="flex items-center gap-1">
-                <Link
-                  to={paths.student(student.id)}
-                  aria-label={`View ${student.name}`}
-                  className={buttonClasses({ variant: 'ghost', size: 'icon' })}
-                >
-                  <Eye className="size-4" aria-hidden="true" />
-                </Link>
-                <Link
-                  to={paths.editStudent(student.id)}
-                  aria-label={`Edit ${student.name}`}
-                  className={buttonClasses({ variant: 'ghost', size: 'icon' })}
-                >
-                  <Pencil className="size-4" aria-hidden="true" />
-                </Link>
-                <IconButton
-                  icon={Trash2}
-                  label={`Delete ${student.name}`}
-                  onClick={() => onDelete(student)}
-                  className="hover:bg-danger/10 hover:text-danger"
-                />
-              </span>
+            <div className="min-w-0 flex-1">
+              <Link
+                to={paths.student(student.id)}
+                className="block truncate text-subheading font-semibold text-ink"
+              >
+                {student.name}
+              </Link>
+              <p className="mt-0.5 text-meta text-muted">{student.studentId}</p>
             </div>
+
+            <StatusPill status={student.enrollmentStatus} />
           </div>
-        </div>
+
+          <dl className="mt-3.5 grid grid-cols-2 gap-x-3 gap-y-2.5">
+            <div className="min-w-0">
+              <dt className="eyebrow">Course</dt>
+              <dd className="mt-0.5 truncate text-label font-medium text-charcoal">
+                {student.course}
+              </dd>
+            </div>
+            <div className="min-w-0">
+              <dt className="eyebrow">Year</dt>
+              <dd className="mt-0.5 truncate text-label font-medium text-charcoal">
+                {student.year}
+              </dd>
+            </div>
+            <div className="min-w-0">
+              <dt className="eyebrow">Department</dt>
+              <dd className="mt-0.5 truncate text-label font-medium text-charcoal">
+                {student.department}
+              </dd>
+            </div>
+            <div className="min-w-0">
+              <dt className="eyebrow">Registered</dt>
+              <dd className="mt-0.5 text-label font-medium text-charcoal">
+                {formatDate(student.dateOfRegistration)}
+              </dd>
+            </div>
+          </dl>
+
+          <div className="mt-3.5 flex items-center justify-end gap-1 border-t border-line/60 pt-3">
+            <Link to={paths.student(student.id)} className={buttonClasses({ variant: 'ghost', size: 'sm' })}>
+              <Eye className="size-4" aria-hidden="true" />
+              View
+            </Link>
+            <Link
+              to={paths.editStudent(student.id)}
+              className={buttonClasses({ variant: 'ghost', size: 'sm' })}
+            >
+              <Pencil className="size-4" aria-hidden="true" />
+              Edit
+            </Link>
+            <IconButton
+              icon={Trash2}
+              label={`Delete ${student.name}`}
+              onClick={() => onDelete(student)}
+              className="size-9 hover:bg-danger/10 hover:text-danger"
+            />
+          </div>
+        </article>
       )}
       emptyState={
         <EmptyState

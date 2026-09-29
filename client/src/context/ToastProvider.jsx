@@ -5,10 +5,15 @@ import { CheckCircle2, Info, TriangleAlert, X, XCircle } from 'lucide-react';
 import { ToastContext } from './toastContext.js';
 import { cx } from '../utils/cx.js';
 
+/**
+ * Four tones, one shape: a colour bar, an icon, a title and a sentence. The icon
+ * carries the meaning as well as the colour, so a toast still reads correctly
+ * without relying on hue.
+ */
 const TONES = {
   success: { icon: CheckCircle2, accent: 'text-success', bar: 'bg-success' },
   error: { icon: XCircle, accent: 'text-danger', bar: 'bg-danger' },
-  warning: { icon: TriangleAlert, accent: 'text-warning', bar: 'bg-warning' },
+  warning: { icon: TriangleAlert, accent: 'text-warning-ink', bar: 'bg-warning' },
   info: { icon: Info, accent: 'text-info', bar: 'bg-info' },
 };
 
@@ -73,7 +78,7 @@ export const ToastProvider = ({ children }) => {
                 animate={{ opacity: 1, y: 0, scale: 1 }}
                 exit={{ opacity: 0, y: 8, scale: 0.98 }}
                 transition={{ type: 'spring', stiffness: 420, damping: 32 }}
-                className="pointer-events-auto relative overflow-hidden rounded-card border border-line/80 bg-surface shadow-raised"
+                className="pointer-events-auto relative overflow-hidden rounded-panel border border-line/80 bg-surface shadow-raised"
               >
                 <span className={cx('absolute inset-y-0 left-0 w-1', bar)} aria-hidden="true" />
 
@@ -81,9 +86,9 @@ export const ToastProvider = ({ children }) => {
                   <Icon className={cx('mt-0.5 size-5 shrink-0', accent)} aria-hidden="true" />
 
                   <div className="min-w-0 flex-1">
-                    <p className="text-sm font-semibold text-ink">{toast.title}</p>
+                    <p className="text-body font-semibold text-ink">{toast.title}</p>
                     {toast.message ? (
-                      <p className="mt-0.5 text-sm leading-relaxed text-muted">{toast.message}</p>
+                      <p className="mt-0.5 text-label leading-relaxed text-muted">{toast.message}</p>
                     ) : null}
                   </div>
 

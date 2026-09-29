@@ -19,7 +19,7 @@ import { Avatar } from '../components/ui/Avatar.jsx';
 import { StatusPill } from '../components/ui/Badge.jsx';
 import { Button } from '../components/ui/Button.jsx';
 import { buttonClasses } from '../components/ui/buttonStyles.js';
-import { Card } from '../components/ui/Card.jsx';
+import { Card, CardHeader } from '../components/ui/Card.jsx';
 import { ConfirmDialog } from '../components/ui/ConfirmDialog.jsx';
 import { EmptyState, ErrorState } from '../components/ui/States.jsx';
 import { Skeleton } from '../components/ui/Skeleton.jsx';
@@ -33,17 +33,26 @@ import { appConfig } from '../config/app.js';
 import { paths } from '../routes/paths.js';
 import { routeCrumbs } from '../routes/routeMeta.js';
 
+/** One labelled fact, inside a group's definition list. */
 const DetailRow = ({ icon: Icon, label, children }) => (
-  <div className="flex items-start gap-3 px-5 py-3.5">
-    <span className="mt-0.5 grid size-8 shrink-0 place-items-center rounded-lg bg-beige/50 text-charcoal">
+  <div className="flex items-start gap-3 px-panel py-3.5">
+    <span className="mt-0.5 grid size-8 shrink-0 place-items-center rounded-chip bg-beige/50 text-charcoal">
       <Icon className="size-4" aria-hidden="true" />
     </span>
 
     <div className="min-w-0">
-      <dt className="text-[12px] font-medium tracking-wide text-muted uppercase">{label}</dt>
-      <dd className="mt-0.5 text-[14px] font-medium break-words text-ink">{children}</dd>
+      <dt className="eyebrow">{label}</dt>
+      <dd className="mt-1 text-body font-medium break-words text-ink">{children}</dd>
     </div>
   </div>
+);
+
+/** A group of facts: heading, then the rows, as one list. */
+const DetailGroup = ({ icon, title, description, children }) => (
+  <Card className="overflow-hidden">
+    <CardHeader icon={icon} title={title} description={description} />
+    <dl className="divide-y divide-line/50">{children}</dl>
+  </Card>
 );
 
 export default function StudentDetailPage() {
@@ -133,7 +142,9 @@ export default function StudentDetailPage() {
         title={student?.name ?? 'Loading student…'}
         description={
           student
-            ? `Registered ${formatDate(student.dateOfRegistration)} · ${formatRelative(student.dateOfRegistration)}`
+            ? `On the register since ${formatDate(student.dateOfRegistration)} · ${formatRelative(
+                student.dateOfRegistration,
+              )}`
             : undefined
         }
         actions={
@@ -142,9 +153,9 @@ export default function StudentDetailPage() {
               variant="secondary"
               icon={ArrowLeft}
               onClick={() => navigate(paths.students)}
-              className="hidden sm:inline-flex"
             >
-              Back
+              <span className="hidden sm:inline">Back to register</span>
+              <span className="sm:hidden">Back</span>
             </Button>
             {student ? (
               <>
@@ -152,7 +163,7 @@ export default function StudentDetailPage() {
                   <Pencil className="size-4" aria-hidden="true" />
                   Edit details
                 </Link>
-                <Button variant="ghost" icon={Trash2} onClick={() => setIsConfirmOpen(true)}>
+                <Button variant="dangerGhost" icon={Trash2} onClick={() => setIsConfirmOpen(true)}>
                   Delete
                 </Button>
               </>
@@ -161,130 +172,140 @@ export default function StudentDetailPage() {
         }
       />
 
-      <div className="grid gap-6 lg:grid-cols-[1.1fr_0.9fr]">
-        <Card className="overflow-hidden">
-          {student ? (
-            <>
-              <div className="flex flex-wrap items-center gap-5 border-b border-line/60 px-5 py-6">
-                <Avatar name={student.name} src={student.avatarUrl || undefined} size="xl" />
+      {/* Who this is and the three facts someone checks first. The name itself
+          is the page title above, so it is not repeated here. */}
+      <Card tone="accent" className="px-panel py-5">
+        {student ? (
+          <div className="flex flex-col gap-5 sm:flex-row sm:items-center">
+            <Avatar name={student.name} src={student.avatarUrl || undefined} size="lg" />
 
-                <div className="min-w-0">
-                  <h2 className="text-xl font-semibold tracking-tight text-ink">{student.name}</h2>
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="inline-flex items-center gap-1.5 rounded-full border border-line-strong/70 bg-surface px-2.5 py-1 text-meta font-semibold text-charcoal">
+                <IdCard className="size-3.5" aria-hidden="true" />
+                {student.studentId}
+              </span>
+              <StatusPill status={student.enrollmentStatus} />
+            </div>
 
-                  <div className="mt-2 flex flex-wrap items-center gap-2">
-                    <span className="inline-flex items-center gap-1.5 rounded-full border border-line bg-canvas px-2.5 py-1 text-[12px] font-semibold text-charcoal">
-                      <IdCard className="size-3.5" aria-hidden="true" />
-                      {student.studentId}
-                    </span>
-                    <StatusPill status={student.enrollmentStatus} />
-                  </div>
+            <dl className="grid flex-1 grid-cols-2 gap-x-4 gap-y-3 sm:grid-cols-3">
+              {[
+                { label: 'Course', value: student.course },
+                { label: 'Department', value: student.department },
+                { label: 'Year', value: student.year },
+              ].map((fact) => (
+                <div key={fact.label} className="min-w-0">
+                  <dt className="eyebrow">{fact.label}</dt>
+                  <dd className="mt-1 truncate text-label font-medium text-ink">{fact.value}</dd>
                 </div>
-              </div>
-
-              <dl className="divide-y divide-line/60">
-                <DetailRow icon={Mail} label="Email">
-                  <a
-                    href={`mailto:${student.email}`}
-                    className="rounded transition-colors hover:text-charcoal hover:underline hover:underline-offset-4"
-                  >
-                    {student.email}
-                  </a>
-                </DetailRow>
-
-                <DetailRow icon={Phone} label="Phone">
-                  <a
-                    href={`tel:${student.phone.replace(/\s/g, '')}`}
-                    className="rounded transition-colors hover:text-charcoal hover:underline hover:underline-offset-4"
-                  >
-                    {student.phone}
-                  </a>
-                </DetailRow>
-
-                <DetailRow icon={BookOpen} label="Course">
-                  {student.course}
-                </DetailRow>
-
-                <DetailRow icon={GraduationCap} label="Year">
-                  {student.year}
-                </DetailRow>
-
-                <DetailRow icon={Building2} label="Department">
-                  {student.department}
-                </DetailRow>
-
-                <DetailRow icon={CalendarDays} label="Date of registration">
-                  {formatDate(student.dateOfRegistration)}
-                </DetailRow>
-              </dl>
-            </>
-          ) : (
-            <div className="space-y-5 px-5 py-6">
-              <div className="flex items-center gap-5">
-                <Skeleton className="size-20 rounded-full" />
-                <div className="space-y-2">
-                  <Skeleton className="h-5 w-44" />
-                  <Skeleton className="h-4 w-32" />
-                </div>
-              </div>
-              {Array.from({ length: 5 }).map((_, index) => (
-                <Skeleton key={index} className="h-4 w-2/3" />
               ))}
+            </dl>
+          </div>
+        ) : (
+          <div className="flex flex-col gap-5 sm:flex-row sm:items-center">
+            <Skeleton className="size-16 rounded-full" />
+            <div className="space-y-2.5">
+              <Skeleton className="h-6 w-52" />
+              <Skeleton className="h-5 w-64" />
             </div>
-          )}
+          </div>
+        )}
+      </Card>
+
+      <div className="mt-section grid gap-6 lg:grid-cols-2">
+        <DetailGroup
+          icon={GraduationCap}
+          title="Academic information"
+          description="What the student is studying and where they sit in the register."
+        >
+          <DetailRow icon={BookOpen} label="Course">
+            {student?.course ?? <Skeleton className="h-4 w-40" />}
+          </DetailRow>
+          <DetailRow icon={Building2} label="Department">
+            {student?.department ?? <Skeleton className="h-4 w-40" />}
+          </DetailRow>
+          <DetailRow icon={GraduationCap} label="Year of study">
+            {student?.year ?? <Skeleton className="h-4 w-24" />}
+          </DetailRow>
+          <DetailRow icon={UserRound} label="Enrollment status">
+            {student ? (
+              <StatusPill status={student.enrollmentStatus} />
+            ) : (
+              <Skeleton className="h-6 w-20 rounded-full" />
+            )}
+          </DetailRow>
+        </DetailGroup>
+
+        <DetailGroup
+          icon={Mail}
+          title="Contact information"
+          description="How the student can be reached."
+        >
+          <DetailRow icon={Mail} label="Email">
+            {student ? (
+              <a
+                href={`mailto:${student.email}`}
+                className="rounded transition-colors hover:text-charcoal hover:underline hover:underline-offset-4"
+              >
+                {student.email}
+              </a>
+            ) : (
+              <Skeleton className="h-4 w-48" />
+            )}
+          </DetailRow>
+          <DetailRow icon={Phone} label="Phone">
+            {student ? (
+              <a
+                href={`tel:${student.phone.replace(/\s/g, '')}`}
+                className="rounded transition-colors hover:text-charcoal hover:underline hover:underline-offset-4"
+              >
+                {student.phone}
+              </a>
+            ) : (
+              <Skeleton className="h-4 w-32" />
+            )}
+          </DetailRow>
+        </DetailGroup>
+
+        <DetailGroup
+          icon={CalendarDays}
+          title="Registration"
+          description="When this record entered the register."
+        >
+          <DetailRow icon={CalendarDays} label="Date of registration">
+            {student ? formatDate(student.dateOfRegistration) : <Skeleton className="h-4 w-28" />}
+          </DetailRow>
+          <DetailRow icon={IdCard} label="Student ID">
+            <span className="font-mono tracking-tight">
+              {student?.studentId ?? <Skeleton className="h-4 w-32" />}
+            </span>
+          </DetailRow>
+        </DetailGroup>
+
+        <Card>
+          <CardHeader
+            eyebrow="About this record"
+            title="How CampusDesk keeps it"
+            icon={IdCard}
+          />
+
+          <div className="px-panel py-5">
+            <ul className="space-y-3.5 text-label leading-relaxed text-muted">
+              <li className="flex gap-3">
+                <span className="mt-1.5 size-1.5 shrink-0 rounded-full bg-beige-strong" aria-hidden="true" />
+                CampusDesk issues the student ID when a record is created, and it never changes.
+              </li>
+              <li className="flex gap-3">
+                <span className="mt-1.5 size-1.5 shrink-0 rounded-full bg-beige-strong" aria-hidden="true" />
+                Edits keep the same record — the registration date is an administrative fact and only
+                an administrator can change it.
+              </li>
+              <li className="flex gap-3">
+                <span className="mt-1.5 size-1.5 shrink-0 rounded-full bg-beige-strong" aria-hidden="true" />
+                Deleting removes the record from the register for good.
+              </li>
+            </ul>
+          </div>
         </Card>
-
-        <div className="space-y-6">
-          <Card>
-            <div className="border-b border-line/60 px-5 py-4">
-              <h2 className="text-[15px] font-semibold text-ink">Enrollment</h2>
-              <p className="mt-1 text-[13px] text-muted">
-                Status controls whether the student appears in active enrolment counts.
-              </p>
-            </div>
-
-            <div className="space-y-4 px-5 py-4">
-              <div className="flex items-center justify-between gap-3">
-                <span className="text-[13px] font-medium text-charcoal">Current status</span>
-                {student ? <StatusPill status={student.enrollmentStatus} /> : <Skeleton className="h-6 w-20 rounded-full" />}
-              </div>
-
-              <dl className="grid grid-cols-2 gap-3">
-                {[
-                  { label: 'Year', value: student?.year },
-                  { label: 'Department', value: student?.department },
-                ].map(({ label, value }) => (
-                  <div key={label} className="rounded-xl border border-line/70 bg-canvas/60 px-3.5 py-3">
-                    <dt className="text-[11px] font-semibold tracking-wide text-muted uppercase">
-                      {label}
-                    </dt>
-                    <dd className="mt-1 text-[13px] font-medium text-ink">{value ?? '—'}</dd>
-                  </div>
-                ))}
-              </dl>
-            </div>
-          </Card>
-
-          <Card>
-            <div className="px-5 py-4">
-              <h2 className="text-[15px] font-semibold text-ink">Record</h2>
-              <p className="mt-1 text-[13px] leading-relaxed text-muted">
-                Student IDs are issued by CampusDesk and cannot be edited. Every change to a record is
-                stored with a timestamp.
-              </p>
-
-              <dl className="mt-4 space-y-2.5 text-[13px]">
-                <div className="flex items-center justify-between gap-3">
-                  <dt className="text-muted">Registration</dt>
-                  <dd className="font-medium text-ink">{formatDate(student?.dateOfRegistration)}</dd>
-                </div>
-                <div className="flex items-center justify-between gap-3">
-                  <dt className="text-muted">Student ID</dt>
-                  <dd className="font-medium text-ink">{student?.studentId ?? '—'}</dd>
-                </div>
-              </dl>
-            </div>
-          </Card>
-        </div>
       </div>
 
       <ConfirmDialog

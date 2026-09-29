@@ -4,8 +4,12 @@ import { Modal } from './Modal.jsx';
 import { Button } from './Button.jsx';
 
 /**
- * Confirmation step for destructive actions. The confirm button stays disabled
- * while the request is in flight so an action cannot be fired twice.
+ * Confirmation step for destructive actions.
+ *
+ * It says what is about to be deleted, marks itself as destructive in three
+ * ways that do not depend on colour alone (the warning icon, the wording, and a
+ * filled danger button), and keeps the confirm button disabled while the request
+ * is in flight so an action cannot be fired twice.
  */
 export const ConfirmDialog = ({
   open,
@@ -31,6 +35,7 @@ export const ConfirmDialog = ({
         </Button>
         <Button
           variant={tone === 'danger' ? 'danger' : 'primary'}
+          icon={tone === 'danger' ? TriangleAlert : undefined}
           onClick={onConfirm}
           isLoading={isLoading}
         >
@@ -41,11 +46,11 @@ export const ConfirmDialog = ({
   >
     <div className="flex items-start gap-3">
       {tone === 'danger' ? (
-        <span className="grid size-10 shrink-0 place-items-center rounded-xl bg-danger/10 text-danger">
+        <span className="grid size-10 shrink-0 place-items-center rounded-chip bg-danger/10 text-danger">
           <TriangleAlert className="size-5" aria-hidden="true" />
         </span>
       ) : null}
-      <p className="text-sm leading-relaxed text-muted">{description}</p>
+      <p className="text-body leading-relaxed text-muted">{description}</p>
     </div>
   </Modal>
 );

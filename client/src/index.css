@@ -1,42 +1,102 @@
 @import 'tailwindcss';
 
-/* ---------------------------------------------------------------------------
-   CampusDesk design tokens.
-   The palette is intentionally narrow: beige + dark grey carry the identity,
-   with a small supporting set for status and feedback. Anything outside this
-   list should not appear in the product.
---------------------------------------------------------------------------- */
+/* ===========================================================================
+   CampusDesk design tokens
+   ---------------------------------------------------------------------------
+   One narrow palette — beige and dark grey carry the identity, with a small
+   supporting set for enrolment status and feedback. Derived shades are tints or
+   shades *of those exact values* (a darker warning for text on white, a warmer
+   grey for quiet strips); no new hue is introduced anywhere.
+
+   Everything below is a token so the interface is composed from a system rather
+   than from repeated magic numbers: type scale, spacing rhythm, surfaces,
+   borders, radii and elevation.
+=========================================================================== */
 @theme {
   --font-sans:
     'Plus Jakarta Sans', ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
 
-  /* Surfaces */
-  --color-canvas: #f7f4f1;
-  --color-surface: #ffffff;
+  /* --- Surfaces -------------------------------------------------------- */
+  --color-canvas: #f7f4f1; /* page background */
+  --color-canvas-deep: #efe9e3; /* quiet strips: table heads, toolbars */
+  --color-surface: #ffffff; /* primary surface */
+  --color-surface-muted: #faf8f6; /* secondary surface inside a panel */
 
-  /* Brand */
+  /* --- Brand ----------------------------------------------------------- */
   --color-beige: #ddd0c8;
   --color-beige-strong: #CBBBAF; /* hover / active beige */
   --color-charcoal: #323232;
 
-  /* Text */
+  /* --- Text ------------------------------------------------------------ */
   --color-ink: #242424;
   --color-muted: #6b6b6b;
 
-  /* Lines */
+  /* --- Borders --------------------------------------------------------- */
   --color-line: #d6d0cb;
+  --color-line-strong: #c9c1ba;
 
-  /* Feedback */
+  /* --- Feedback -------------------------------------------------------- */
   --color-success: #3f7d5a;
   --color-warning: #b7791f;
   --color-danger: #b94a48;
   --color-info: #58758c;
 
-  --shadow-card: 0 1px 2px rgb(50 50 50 / 0.04), 0 10px 30px -22px rgb(50 50 50 / 0.28);
-  --shadow-raised: 0 2px 6px rgb(50 50 50 / 0.06), 0 22px 45px -28px rgb(50 50 50 / 0.35);
+  /* Warning is the one tone that is too light to read as small text on white;
+     this shade keeps the same hue and reaches AA. */
+  --color-warning-ink: #8a5a12;
 
+  /* --- Type scale ------------------------------------------------------
+     Page title scales with the viewport, so a phone gets a phone-sized title
+     without every page repeating a responsive font-size pair. */
+  --text-display: clamp(2.25rem, 1.55rem + 2.8vw, 3.5rem);
+  --text-display--line-height: 1.03;
+  --text-display--letter-spacing: -0.032em;
+
+  --text-title: clamp(1.5rem, 1.32rem + 0.72vw, 1.875rem);
+  --text-title--line-height: 1.14;
+  --text-title--letter-spacing: -0.022em;
+
+  --text-heading: 1.0625rem;
+  --text-heading--line-height: 1.35;
+  --text-heading--letter-spacing: -0.012em;
+
+  --text-subheading: 0.9375rem;
+  --text-subheading--line-height: 1.45;
+
+  --text-body: 0.875rem;
+  --text-body--line-height: 1.6;
+
+  --text-label: 0.8125rem;
+  --text-label--line-height: 1.5;
+
+  --text-meta: 0.75rem;
+  --text-meta--line-height: 1.5;
+
+  --text-micro: 0.6875rem;
+  --text-micro--line-height: 1.4;
+  --text-micro--letter-spacing: 0.12em;
+
+  /* --- Spacing rhythm --------------------------------------------------
+     The same measurements across dashboard, register, detail, forms, auth and
+     navigation: one page gutter, one section gap, one panel padding. */
+  --spacing-gutter: 1.25rem;
+  --spacing-gutter-lg: 2rem;
+  --spacing-section: 1.5rem;
+  --spacing-panel: 1.25rem;
+    
+  /* --- Radii ----------------------------------------------------------- */
+  --radius-panel: 1.125rem;
   --radius-card: 1rem;
   --radius-field: 0.625rem;
+  --radius-chip: 0.5rem;
+
+  /* --- Elevation -------------------------------------------------------
+     Three levels only: resting panels, raised things, and overlays. */
+  --shadow-card: 0 1px 2px rgb(50 50 50 / 0.04), 0 14px 34px -26px rgb(50 50 50 / 0.3);
+  --shadow-raised: 0 2px 6px rgb(50 50 50 / 0.06), 0 26px 50px -30px rgb(50 50 50 / 0.38);
+  --shadow-overlay: 0 34px 70px -32px rgb(36 36 36 / 0.45);
+  --shadow-button: 0 1px 2px rgb(50 50 50 / 0.18);
+  --shadow-button-danger: 0 1px 2px rgb(185 74 72 / 0.24);
 }
 
 @layer base {
@@ -46,7 +106,7 @@
   }
 
   body {
-    @apply bg-canvas text-ink font-sans antialiased;
+    @apply bg-canvas text-ink font-sans text-body antialiased;
     min-height: 100dvh;
   }
 
@@ -54,12 +114,18 @@
   h2,
   h3,
   h4 {
-    @apply text-ink font-semibold tracking-tight;
+    @apply text-ink font-semibold;
     text-wrap: balance;
   }
 
   p {
     text-wrap: pretty;
+  }
+
+  /* Numbers line up wherever they are read as data. */
+  table,
+  .tabular-nums {
+    font-variant-numeric: tabular-nums;
   }
 
   ::selection {
@@ -88,6 +154,39 @@
     border: 3px solid transparent;
     border-radius: 999px;
     background-clip: content-box;
+  }
+}
+
+/* ---------------------------------------------------------------------------
+   Composite classes
+   A handful of shapes repeat on every screen — a panel, its header, its body,
+   a label above a value, an eyebrow above a title. Naming them once is what
+   keeps the dashboard, the register, the detail page and the forms looking like
+   one product instead of four interpretations of the same idea.
+--------------------------------------------------------------------------- */
+@layer components {
+  .panel {
+    @apply rounded-panel border border-line/70 bg-surface shadow-card;
+  }
+
+  .panel-header {
+    @apply flex flex-wrap items-start justify-between gap-4 border-b border-line/60 px-panel py-4;
+  }
+
+  .panel-body {
+    @apply px-panel py-4;
+  }
+
+  .panel-footer {
+    @apply flex flex-wrap items-center gap-2 border-t border-line/60 px-panel py-3.5;
+  }
+
+  .eyebrow {
+    @apply text-micro font-semibold text-muted uppercase;
+  }
+
+  .field-label {
+    @apply block text-label font-semibold text-charcoal;
   }
 }
 

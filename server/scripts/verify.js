@@ -2547,8 +2547,9 @@ await check('the shell owns the frame, the skip link and the page transition', (
     );
   }
 
+  const topbar = sourceOf('components/layout/Topbar.jsx');
   assert(
-    sourceOf('components/layout/Topbar.jsx').includes('matchRouteMeta(pathname).label'),
+    topbar.includes('matchRouteMeta(pathname)') && topbar.includes('route.label'),
     'the top bar should name the screen from the route metadata',
   );
 });
@@ -2723,6 +2724,329 @@ await check('the session guard and the stored token keep their single homes', ()
 routingBundle.cleanup();
 
 // ---------------------------------------------------------------------------
+section('Design system & responsive foundation (static)');
+// ---------------------------------------------------------------------------
+
+const cssSource = readFileSync(new URL('index.css', clientRoot), 'utf8');
+const declarations = cssSource.replace(/\/\*[\s\S]*?\*\//g, '');
+const cssNumber = (name) => declarations.match(new RegExp(`--${name}:\\s*([^;]+);`))?.[1]?.trim();
+
+/** Every colour literal the client source uses, anywhere, in any form. */
+const colourLiterals = clientFiles.flatMap(([name, source]) =>
+  [...source.matchAll(/#[0-9a-fA-F]{3,8}\b/g)].map((match) => ({ name, value: match[0] })),
+);
+
+const APPROVED = [
+  '#f7f4f1',
+  '#efe9e3',
+  '#ffffff',
+  '#faf8f6',
+  '#ddd0c8',
+  '#cbbbaf',
+  '#323232',
+  '#242424',
+  '#6b6b6b',
+  '#d6d0cb',
+  '#c9c1ba',
+  '#3f7d5a',
+  '#b7791f',
+  '#b94a48',
+  '#58758c',
+  '#8a5a12',
+];
+
+await check('the palette is declared once, as tokens, and matches the approved values', () => {
+  const expected = {
+    canvas: '#f7f4f1',
+    surface: '#ffffff',
+    beige: '#ddd0c8',
+    'beige-strong': '#cbbbaf',
+    charcoal: '#323232',
+    ink: '#242424',
+    muted: '#6b6b6b',
+    line: '#d6d0cb',
+    success: '#3f7d5a',
+    warning: '#b7791f',
+    danger: '#b94a48',
+    info: '#58758c',
+  };
+
+  for (const [name, value] of Object.entries(expected)) {
+    const declared = (cssNumber(`color-${name}`) ?? '').toLowerCase();
+    assert(
+      declared === value,
+      `--color-${name} should be the approved ${value}, got ${declared || 'nothing'}`,
+    );
+  }
+
+  // Derived tones are allowed only where contrast demands one, and they are
+  // declared here rather than invented in a component.
+  assert(
+    cssNumber('color-warning-ink') === '#8a5a12',
+    'the darker warning shade used for small text should be declared as a token',
+  );
+});
+
+await check('no screen invents a colour of its own', () => {
+  for (const { name, value } of colourLiterals) {
+    assert(
+      APPROVED.includes(value.toLowerCase()),
+      `${name} uses ${value}, which is not part of the approved palette`,
+    );
+  }
+
+  const paletteWords =
+    /\b(?:bg|text|border|from|via|to|ring|fill|stroke|decoration|divide|outline|shadow)-(?:red|orange|amber|yellow|lime|green|emerald|teal|cyan|sky|blue|indigo|violet|purple|fuchsia|pink|rose|slate|gray|grey|zinc|neutral|stone)-\d{2,3}\b/;
+
+  for (const [name, source] of clientFiles) {
+    assert(!paletteWords.test(source), `${name} uses a default Tailwind colour instead of a token`);
+  }
+});
+
+await check('type, spacing, radii and elevation are a system, not per-page choices', () => {
+  const required = [
+    'text-display',
+    'text-title',
+    'text-heading',
+    'text-subheading',
+    'text-body',
+    'text-label',
+    'text-meta',
+    'text-micro',
+    'spacing-gutter',
+    'spacing-section',
+    'spacing-panel',
+    'radius-panel',
+    'radius-card',
+    'radius-field',
+    'radius-chip',
+    'shadow-card',
+    'shadow-raised',
+    'shadow-overlay',
+  ];
+
+  for (const token of required) {
+    assert(Boolean(cssNumber(token)), `--${token} should be declared in the theme`);
+  }
+
+  // Breakpoints stay Tailwind's own: the layout is deliberately mobile-first.
+  assert(!/--breakpoint-/.test(declarations), 'the default breakpoints should not be overridden');
+
+  // Every screen that has a heading uses the scale for it.
+  const pageFiles = clientFiles.filter(([name]) => name.startsWith('pages/'));
+  for (const [name, source] of pageFiles) {
+    assert(!/text-\[\d+px\]/.test(source), `${name} hardcodes a font size instead of using the scale`);
+  }
+
+  assert(
+    sourceOf('components/layout/PageHeader.jsx').includes('text-title'),
+    'a page title should come from the type scale',
+  );
+  assert(
+    !/text-\[\d+px\]/.test(clientSource),
+    'no component should hardcode a pixel font size',
+  );
+});
+
+await check('panels have a hierarchy instead of one repeated card', () => {
+  const card = sourceOf('components/ui/Card.jsx');
+
+  for (const tone of ['surface', 'quiet', 'accent', 'dark']) {
+    assert(card.includes(`${tone}:`), `the panel component should offer a \`${tone}\` tone`);
+  }
+
+  for (const name of ['components/layout/AppLayout.jsx', 'components/layout/Sidebar.jsx', 'components/layout/Topbar.jsx']) {
+    assert(Boolean(sourceOf(name)), `${name} should exist`);
+  }
+
+  assert(
+    card.includes('panel-header') && card.includes('panel-body') && card.includes('panel-footer'),
+    'the shared panel parts should be used rather than re-declared per screen',
+  );
+  assert(
+    !/\.panel-(?:quiet|inset)|meta-text|section-heading/.test(declarations),
+    'the stylesheet should not carry composite classes nothing uses',
+  );
+  assert(
+    sourceOf('pages/DashboardPage.jsx').includes('tone="accent"') ||
+      sourceOf('pages/StudentDetailPage.jsx').includes('tone="accent"'),
+    'a screen should use the accent panel for the thing it wants noticed',
+  );
+  assert(
+    sourceOf('pages/DashboardPage.jsx').includes('bg-charcoal'),
+    'the dashboard band should carry the identity ground',
+  );
+});
+
+await check('buttons state their hierarchy and never rely on colour alone', () => {
+  const styles = sourceOf('components/ui/buttonStyles.js');
+
+  for (const variant of ['primary', 'secondary', 'soft', 'ghost', 'danger', 'dangerGhost']) {
+    assert(styles.includes(`${variant}:`), `the button system should define a \`${variant}\` variant`);
+  }
+
+  for (const state of ['hover:', 'disabled:', 'focus-ring']) {
+    assert(styles.includes(state), `buttons should style their ${state.replace(':', '')} state`);
+  }
+
+  const dialog = sourceOf('components/ui/ConfirmDialog.jsx');
+  assert(dialog.includes('TriangleAlert'), 'a destructive action carries an icon, not just a red fill');
+  assert(
+    dialog.includes("tone === 'danger' ? 'danger' : 'primary'") && dialog.includes('isLoading'),
+    'the destructive button should be the danger variant and stay disabled in flight',
+  );
+  assert(
+    sourceOf('components/ui/Button.jsx').includes('aria-busy'),
+    'a loading button should announce itself',
+  );
+});
+
+await check('form controls share one shape, focus treatment and error wiring', () => {
+  const field = sourceOf('components/ui/Field.jsx');
+
+  for (const control of ['TextInput', 'Select']) {
+    assert(field.includes(`export const ${control}`), `${control} should be part of the field system`);
+  }
+
+  for (const state of ['hover:border-line-strong', 'focus-visible:ring-2', 'disabled:bg-canvas']) {
+    assert(field.includes(state), `controls should style ${state}`);
+  }
+
+  assert(field.includes('aria-describedby') && field.includes('aria-invalid'), 'hints and errors should be announced');
+  assert(field.includes('htmlFor={fieldId}'), 'labels should be bound to their control');
+  assert(field.includes('required ?') && field.includes('optional'), 'required and optional fields should be distinguishable');
+  assert(
+    sourceOf('components/ui/States.jsx').includes('FormAlert') &&
+      sourceOf('pages/LoginPage.jsx').includes('FormAlert'),
+    'a failed submission should use the shared form banner',
+  );
+});
+
+await check('the layout is responsive by construction, not by shrinking', () => {
+  const sidebar = sourceOf('components/layout/Sidebar.jsx');
+  const table = sourceOf('components/ui/DataTable.jsx');
+  const modal = sourceOf('components/ui/Modal.jsx');
+  const toolbar = sourceOf('components/students/StudentRegisterToolbar.jsx');
+  const pagination = sourceOf('components/ui/Pagination.jsx');
+
+  assert(sidebar.includes('lg:block') && sidebar.includes('lg:hidden'), 'the rail and the drawer swap at lg');
+  assert(sidebar.includes('max-w-[85vw]'), 'the drawer should not fill a phone screen');
+  assert(table.includes('md:block') && table.includes('md:hidden'), 'the table becomes cards at md');
+  assert(
+    table.includes('xl:px-panel') && table.includes('hidden xl:table-cell'),
+    'the table should loosen its padding and reveal optional columns only when the width allows',
+  );
+  assert(
+    (sourceOf('components/students/StudentTable.jsx').match(/hidden xl:table-cell/g) ?? []).length >= 4,
+    'the register should mark its optional columns as wide-screen only, header and cell together',
+  );
+  assert(modal.includes('items-end') && modal.includes('sm:items-center'), 'a dialog is a bottom sheet on a phone');
+  assert(toolbar.includes('flex-wrap') && toolbar.includes('lg:flex-row'), 'the toolbar should wrap rather than overflow');
+  assert(pagination.includes('sm:flex-row'), 'pagination should stack on small screens');
+
+  // Fixed-width *layout* is what causes sideways scrolling. Overlays are
+  // positioned, not in flow, so the toast column is measured separately.
+  const fixedWidths = clientFiles
+    .filter(([name]) => !name.startsWith('context/'))
+    .flatMap(([name, source]) =>
+      [...source.matchAll(/(?<!max-)\b(?:w|min-w)-\[(\d+)px\]/g)].map((match) => ({
+        name,
+        width: Number(match[1]),
+      })),
+    );
+
+  for (const { name, width } of fixedWidths) {
+    assert(width <= 320, `${name} pins a ${width}px width, which risks horizontal overflow`);
+  }
+
+  assert(
+    sourceOf('context/ToastProvider.jsx').includes('sm:w-[380px]'),
+    'the toast column should be a fixed overlay and unstretched on a phone',
+  );
+});
+
+await check('empty, loading and error states are first-class', () => {
+  const table = sourceOf('components/students/StudentTable.jsx');
+  const skeletons = sourceOf('components/ui/Skeleton.jsx');
+
+  assert(
+    table.includes('No students match these filters') && table.includes('The register is empty'),
+    'an empty register and an empty result should not read the same',
+  );
+  assert(
+    table.includes('Clear filters') && table.includes('Add student'),
+    'each empty state should offer the action that resolves it',
+  );
+  assert(skeletons.includes('TableSkeleton') && skeletons.includes('StatCardSkeleton'), 'loading should keep the layout');
+  assert(
+    sourceOf('components/ui/States.jsx').includes('onRetry') ,
+    'an error state should offer a retry',
+  );
+  assert(
+    !/stack trace|MongoServerSelectionError|ECONNREFUSED/.test(clientSource.replace(/\/\*[\s\S]*?\*\//g, '')),
+    'no screen should know about driver internals',
+  );
+});
+
+await check('dialogs, toasts and icons follow one pattern each', () => {
+  const modal = sourceOf('components/ui/Modal.jsx');
+  const toasts = sourceOf('context/ToastProvider.jsx');
+
+  assert(modal.includes('role="dialog"') && modal.includes('aria-modal'), 'a dialog should be a real dialog');
+  assert(modal.includes("event.key === 'Escape'"), 'Escape should close it');
+  assert(modal.includes("event.key !== 'Tab'"), 'Tab should stay inside it');
+  assert(modal.includes('previouslyFocused.focus()'), 'focus should return to what opened it');
+
+  for (const tone of ['success', 'error', 'warning', 'info']) {
+    assert(toasts.includes(`${tone}:`), `toasts should support the ${tone} tone`);
+  }
+  assert(toasts.includes('aria-live'), 'toasts should be announced');
+
+  const iconSources = clientFiles.filter(([name]) => /components\/|pages\//.test(name));
+  for (const [name, source] of iconSources) {
+    const imports = [...source.matchAll(/from '([^']*icons?[^']*)'/g)].map((match) => match[1]);
+    for (const specifier of imports) {
+      assert(specifier === 'lucide-react', `${name} imports icons from ${specifier}; lucide-react is the one library`);
+    }
+  }
+
+  const emoji = /[\u{1F300}-\u{1FAFF}\u{2600}-\u{27BF}]/u;
+  for (const [name, source] of clientFiles) {
+    assert(!emoji.test(source), `${name} uses an emoji as an icon`);
+  }
+});
+
+await check('transitions stay subtle and nothing suppresses motion globally', () => {
+  const primitives = [
+    'components/ui/buttonStyles.js',
+    'components/ui/DataTable.jsx',
+    'components/ui/Pagination.jsx',
+    'components/layout/Sidebar.jsx',
+  ];
+
+  for (const name of primitives) {
+    assert(Boolean(sourceOf(name)), `${name} should exist`);
+  }
+
+  assert(
+    sourceOf('components/ui/buttonStyles.js').includes('duration-150'),
+    'hover feedback should be quick rather than decorative',
+  );
+  assert(
+    sourceOf('components/ui/buttonStyles.js').includes('transition-[background-color,border-color,color,box-shadow]'),
+    'interactive feedback should be limited to colour and elevation',
+  );
+  assert(
+    !/animate-(?:bounce|ping|spin)\b/.test(sourceOf('components/ui/DataTable.jsx')),
+    'rows should not animate for decoration',
+  );
+  assert(
+    cssSource.includes('prefers-reduced-motion'),
+    'the reduced-motion query should still be honoured',
+  );
+});
+
+// ---------------------------------------------------------------------------
 section('Route rendering (real components, rendered in Node — no browser)');
 // ---------------------------------------------------------------------------
 
@@ -2825,7 +3149,7 @@ await check('a signed-in visitor gets the shell, the navigation and the page', a
     'with the application routes',
   );
   assert(html.includes('Ananya Sharma'), 'and the signed-in user');
-  assert(html.includes('Search by name, ID, email or course'), 'the register toolbar should render');
+  assert(html.includes('Search name, ID, email or phone'), 'the register toolbar should render');
   assert(html.includes('Rows per page'), 'including the page-size control');
   assert(!html.includes('Sign in to CampusDesk'), 'and no trace of the sign-in screen');
 
@@ -2837,6 +3161,46 @@ await check('a signed-in visitor gets the shell, the navigation and the page', a
 
   const form = await renderSignedIn(declaredPaths.newStudent, 'form');
   assert(form.includes('Full name') && form.includes('Email address'), 'the create form renders its fields');
+});
+
+await check('screens are structurally sound: one h1, labelled controls, real table markup', async () => {
+  const register = await renderSignedIn(declaredPaths.students, 'students');
+
+  const h1s = [...register.matchAll(/<h1[^>]*>/g)];
+  assert(h1s.length === 1, `a screen should have exactly one h1, found ${h1s.length}`);
+  assert(/<h2[^>]*>/.test(register), 'the page title should be a second-level heading');
+  assert(register.includes('id="main-content"'), 'the content area should be the skip link target');
+  assert(
+    register.includes('animate-pulse'),
+    'a register that has not loaded yet should show skeleton rows rather than an empty table',
+  );
+  assert(
+    sourceOf('components/ui/DataTable.jsx').includes('scope="col"'),
+    'table headers should be real column headers',
+  );
+
+  for (const label of [
+    'Filter by enrollment status',
+    'Filter by year',
+    'Filter by department',
+    'Filter by course',
+    'Sort students',
+    'Rows per page',
+  ]) {
+    assert(register.includes(`aria-label="${label}"`), `the ${label} control should have an accessible name`);
+  }
+
+  assert(/aria-current="page"/.test(register), 'the current section should be marked for assistive tech');
+
+  const dashboard = await renderSignedIn(declaredPaths.dashboard, 'dashboard');
+  assert(
+    [...dashboard.matchAll(/<h1[^>]*>/g)].length === 1,
+    'the dashboard should also have exactly one h1',
+  );
+  assert(
+    dashboard.includes('Register at a glance') || dashboard.includes('Could not'),
+    'the dashboard should render its summary band',
+  );
 });
 
 await check('navigation marks the current section, and only one item at a time', async () => {

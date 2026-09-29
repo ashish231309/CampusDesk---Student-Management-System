@@ -8,9 +8,15 @@ const wrap = (content, className) => <div className={className}>{content}</div>;
 /**
  * One table component for the whole product.
  *
+ * The head is a quiet strip, the rows carry the content, and separation comes
+ * from a hairline rather than a box per row — a register reads better as one
+ * surface than as a stack of cards.
+ *
  * Below `md` the tabular layout collapses to `renderMobileCard`, because a
  * five-column table is not something anyone should have to swipe sideways on a
- * phone.
+ * phone. Columns that are useful but not essential can mark themselves
+ * `hidden xl:table-cell` (see `StudentTable`) so the table stays readable on a
+ * tablet instead of overflowing it.
  */
 export const DataTable = ({
   columns = [],
@@ -28,15 +34,15 @@ export const DataTable = ({
   return (
     <div className={className}>
       <div className="hidden md:block">
-        <table className="w-full border-collapse text-sm">
+        <table className="w-full border-collapse">
           <thead>
-            <tr className="border-b border-line/70 bg-canvas/60">
+            <tr className="border-b border-line/70 bg-surface-muted">
               {columns.map((column) => (
                 <th
                   key={column.key}
                   scope="col"
                   className={cx(
-                    'px-5 py-3 text-left text-[11px] font-semibold tracking-wider text-muted uppercase whitespace-nowrap',
+                    'px-4 py-3 text-left text-micro font-semibold text-muted uppercase whitespace-nowrap xl:px-panel',
                     column.align === 'right' && 'text-right',
                     column.headerClassName,
                   )}
@@ -47,20 +53,20 @@ export const DataTable = ({
             </tr>
           </thead>
 
-          <tbody className="divide-y divide-line/60">
+          <tbody className="divide-y divide-line/50">
             {rows.map((row, index) => (
               <motion.tr
                 key={getRowKey(row)}
                 initial={{ opacity: 0 }}
                 animate={{ opacity: 1 }}
-                transition={{ duration: 0.25, delay: Math.min(index * 0.03, 0.24) }}
-                className="transition-colors duration-150 hover:bg-beige/25"
+                transition={{ duration: 0.22, delay: Math.min(index * 0.025, 0.2) }}
+                className="group transition-colors duration-150 hover:bg-beige/20"
               >
                 {columns.map((column) => (
                   <td
                     key={column.key}
                     className={cx(
-                      'px-5 py-3.5 align-middle',
+                      'px-4 py-3.5 align-middle text-body xl:px-panel',
                       column.align === 'right' && 'text-right',
                       column.cellClassName,
                     )}
@@ -74,11 +80,11 @@ export const DataTable = ({
         </table>
       </div>
 
-      <div className="divide-y divide-line/60 md:hidden">
+      <div className="divide-y divide-line/50 md:hidden">
         {renderMobileCard
           ? rows.map((row) => <div key={getRowKey(row)}>{renderMobileCard(row)}</div>)
           : rows.map((row) => (
-              <div key={getRowKey(row)} className="px-4 py-4 text-sm text-ink">
+              <div key={getRowKey(row)} className="px-4 py-4 text-body text-ink">
                 {columns[0]?.render?.(row) ?? row[columns[0]?.key]}
               </div>
             ))}

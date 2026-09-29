@@ -14,7 +14,7 @@ import {
 
 import { Logo } from '../components/branding/Logo.jsx';
 import { Avatar } from '../components/ui/Avatar.jsx';
-import { StatusPill } from '../components/ui/Badge.jsx';
+import { Badge } from '../components/ui/Badge.jsx';
 import { Button } from '../components/ui/Button.jsx';
 import { buttonClasses } from '../components/ui/buttonStyles.js';
 import { appConfig } from '../config/app.js';
@@ -140,7 +140,7 @@ export default function LandingPage() {
 
   return (
     <div ref={scopeRef} className="min-h-dvh bg-canvas">
-      <header className="mx-auto flex w-full max-w-[1180px] items-center justify-between px-4 py-5 sm:px-6 lg:px-8">
+      <header className="mx-auto flex w-full max-w-[1180px] items-center justify-between gap-3 px-gutter py-5 sm:px-6 lg:px-gutter-lg">
         <Logo tagline />
 
         <nav className="flex items-center gap-2">
@@ -159,12 +159,12 @@ export default function LandingPage() {
         </nav>
       </header>
 
-      <main className="mx-auto w-full max-w-[1180px] px-4 pb-20 sm:px-6 lg:px-8">
+      <main className="mx-auto w-full max-w-[1180px] px-gutter pb-20 sm:px-6 lg:px-gutter-lg">
         <section className="grid items-center gap-12 pt-10 pb-16 lg:grid-cols-[1.05fr_0.95fr] lg:pt-16">
           <div>
             <span
               data-hero="mark"
-              className="inline-flex items-center gap-2 rounded-full border border-line bg-surface px-3 py-1.5 text-[12px] font-semibold text-charcoal shadow-card"
+              className="inline-flex items-center gap-2 rounded-full border border-line bg-surface px-3 py-1.5 text-meta font-semibold text-charcoal shadow-card"
             >
               <span className="size-2 rounded-full bg-success" aria-hidden="true" />
               {appConfig.name} · {appConfig.tagline}
@@ -172,13 +172,13 @@ export default function LandingPage() {
 
             <h1
               data-hero="title"
-              className="mt-5 text-[34px] leading-[1.08] font-extrabold tracking-tight text-ink sm:text-[44px] lg:text-[52px]"
+              className="mt-5 text-display font-extrabold text-ink"
             >
               <span className="block">Every student record,</span>
               <span className="block">on one calm desk.</span>
             </h1>
 
-            <p data-hero="copy" className="mt-5 max-w-xl text-[15px] leading-relaxed text-muted sm:text-base">
+            <p data-hero="copy" className="mt-5 max-w-xl text-subheading leading-relaxed text-muted">
               CampusDesk gives campus teams one place to register students, keep their details
               current and see enrolment at a glance — instead of chasing spreadsheets between
               departments.
@@ -204,10 +204,8 @@ export default function LandingPage() {
                 { label: 'Records per page', value: '8' },
               ].map(({ label, value }) => (
                 <div key={label}>
-                  <dt className="text-[12px] font-medium tracking-wide text-muted uppercase">
-                    {label}
-                  </dt>
-                  <dd className="mt-1 text-xl font-semibold text-ink">{value}</dd>
+                  <dt className="eyebrow">{label}</dt>
+                  <dd className="mt-1.5 text-xl font-semibold text-ink">{value}</dd>
                 </div>
               ))}
             </dl>
@@ -217,13 +215,13 @@ export default function LandingPage() {
           <div data-hero="panel" className="relative">
             <div className="absolute -inset-4 -z-10 rounded-[32px] bg-beige/40" aria-hidden="true" />
 
-            <div className="rounded-card border border-line/70 bg-surface p-4 shadow-raised sm:p-5">
+            <div className="rounded-panel border border-line/70 bg-surface p-4 shadow-raised sm:p-5">
               <div className="flex items-center justify-between gap-3">
                 <div>
-                  <p className="text-[13px] font-semibold text-ink">Recent registrations</p>
-                  <p className="text-[12px] text-muted">Example register · Autumn intake</p>
+                  <p className="text-body font-semibold text-ink">Recent registrations</p>
+                  <p className="text-meta text-muted">Example register · Autumn intake</p>
                 </div>
-                <StatusPill status="neutral" label="Example" />
+                <Badge tone="beige">Example</Badge>
               </div>
 
               <ul className="mt-4 space-y-2.5">
@@ -231,18 +229,18 @@ export default function LandingPage() {
                   <li
                     key={student.id}
                     data-hero="panel-row"
-                    className="flex items-center gap-3 rounded-xl border border-line/60 bg-canvas/50 px-3 py-2.5"
+                    className="flex items-center gap-3 rounded-card border border-line/60 bg-canvas/50 px-3 py-2.5"
                   >
                     <Avatar name={student.name} size="sm" />
 
                     <div className="min-w-0 flex-1">
-                      <p className="truncate text-[13px] font-semibold text-ink">{student.name}</p>
-                      <p className="truncate text-[12px] text-muted">
+                      <p className="truncate text-label font-semibold text-ink">{student.name}</p>
+                      <p className="truncate text-meta text-muted">
                         {student.studentId} · {student.department}
                       </p>
                     </div>
 
-                    <span className="hidden text-[12px] text-muted sm:block">
+                    <span className="hidden text-meta text-muted sm:block">
                       {formatDate(student.dateOfRegistration)}
                     </span>
                   </li>
@@ -253,8 +251,9 @@ export default function LandingPage() {
         </section>
 
         <section aria-labelledby="capabilities-title" className="pt-6">
-          <h2 id="capabilities-title" className="text-[13px] font-semibold tracking-wider text-muted uppercase">
-            What CampusDesk does
+          <p className="eyebrow">What CampusDesk does</p>
+          <h2 id="capabilities-title" className="mt-2 max-w-2xl text-title font-semibold text-ink">
+            Built around the register, not around a dashboard template
           </h2>
 
           <motion.ul
@@ -272,41 +271,42 @@ export default function LandingPage() {
                   show: { opacity: 1, y: 0, transition: { duration: 0.45, ease: [0.22, 1, 0.36, 1] } },
                 }}
                 whileHover={{ y: -3 }}
-                className="rounded-card border border-line/70 bg-surface p-5 shadow-card"
+                className="rounded-panel border border-line/70 bg-surface p-5 shadow-card transition-shadow duration-200 hover:shadow-raised"
               >
-                <span className="grid size-10 place-items-center rounded-xl bg-beige/60 text-charcoal">
+                <span className="grid size-10 place-items-center rounded-chip bg-beige/60 text-charcoal">
                   <Icon className="size-[18px]" aria-hidden="true" />
                 </span>
-                <h3 className="mt-4 text-[15px] font-semibold text-ink">{title}</h3>
-                <p className="mt-1.5 text-[13px] leading-relaxed text-muted">{copy}</p>
+                <h3 className="mt-4 text-heading font-semibold text-ink">{title}</h3>
+                <p className="mt-1.5 text-label leading-relaxed text-muted">{copy}</p>
               </motion.li>
             ))}
           </motion.ul>
         </section>
 
         <section aria-labelledby="workflow-title" className="pt-16">
-          <h2 id="workflow-title" className="text-[13px] font-semibold tracking-wider text-muted uppercase">
-            How a record moves through CampusDesk
+          <p className="eyebrow">How a record moves through CampusDesk</p>
+          <h2 id="workflow-title" className="mt-2 max-w-2xl text-title font-semibold text-ink">
+            From admission to an enrolment figure you can trust
           </h2>
 
           <ol className="mt-5 grid gap-4 md:grid-cols-3">
             {STEPS.map(({ step, title, copy }) => (
-              <li key={step} className="rounded-card border border-line/70 bg-surface p-5 shadow-card">
-                <span className="text-[12px] font-bold tracking-widest text-muted">{step}</span>
-                <h3 className="mt-3 text-[15px] font-semibold text-ink">{title}</h3>
-                <p className="mt-1.5 text-[13px] leading-relaxed text-muted">{copy}</p>
+              <li key={step} className="rounded-panel border border-line/70 bg-surface p-5 shadow-card">
+                <span className="text-micro font-bold tracking-[0.16em] text-muted">{step}</span>
+                <h3 className="mt-3 text-heading font-semibold text-ink">{title}</h3>
+                <p className="mt-1.5 text-label leading-relaxed text-muted">{copy}</p>
               </li>
             ))}
           </ol>
         </section>
 
-        <section className="mt-16 overflow-hidden rounded-card bg-charcoal px-6 py-10 sm:px-10">
+        <section className="mt-16 overflow-hidden rounded-panel border border-charcoal bg-charcoal px-6 py-10 sm:px-10">
           <div className="flex flex-col items-start justify-between gap-6 lg:flex-row lg:items-center">
             <div className="max-w-xl">
-              <h2 className="text-[24px] leading-tight font-semibold text-canvas sm:text-[28px]">
+              <h2 className="text-title font-semibold text-canvas">
                 Ready to see the register?
               </h2>
-              <p className="mt-2 text-sm leading-relaxed text-canvas/70">
+              <p className="mt-2 text-body leading-relaxed text-canvas/75">
                 Sign in to work with student records, or open the dashboard to see how enrolment is
                 tracking across departments.
               </p>
@@ -331,7 +331,7 @@ export default function LandingPage() {
       </main>
 
       <footer className="border-t border-line/70 bg-surface">
-        <div className="mx-auto flex w-full max-w-[1180px] flex-col gap-3 px-4 py-6 text-[12px] text-muted sm:flex-row sm:items-center sm:justify-between sm:px-6 lg:px-8">
+        <div className="mx-auto flex w-full max-w-[1180px] flex-col gap-3 px-gutter py-6 text-meta text-muted sm:flex-row sm:items-center sm:justify-between sm:px-6 lg:px-gutter-lg">
           <Logo size="sm" />
           <p>
             © {appConfig.year} Ashish Kumar · MIT licensed

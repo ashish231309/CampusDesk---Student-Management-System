@@ -12,7 +12,7 @@ export const SegmentedControl = ({ name, label, options = [], value, onChange, c
     role="radiogroup"
     aria-label={label}
     className={cx(
-      'flex w-full gap-1 rounded-field border border-line bg-canvas p-1',
+      'flex w-full gap-1 rounded-field border border-line bg-canvas-deep p-1',
       className,
     )}
   >
@@ -27,7 +27,7 @@ export const SegmentedControl = ({ name, label, options = [], value, onChange, c
           aria-checked={isActive}
           onClick={() => onChange(option.value)}
           className={cx(
-            'focus-ring relative flex-1 rounded-lg px-3 py-2 text-[13px] font-semibold transition-colors duration-150',
+            'focus-ring relative flex-1 rounded-lg px-3 py-2 text-label font-semibold transition-colors duration-150',
             isActive ? 'text-ink' : 'text-muted hover:text-charcoal',
           )}
         >

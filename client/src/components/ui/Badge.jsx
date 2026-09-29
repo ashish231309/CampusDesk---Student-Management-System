@@ -1,10 +1,15 @@
 import { cx } from '../../utils/cx.js';
 
+/**
+ * Tones are tinted from the approved palette only. `warning` uses the darker
+ * derived shade so small label text stays readable on white.
+ */
 const TONES = {
-  neutral: 'border-beige bg-beige/60 text-charcoal',
+  neutral: 'border-line bg-canvas-deep text-charcoal',
   outline: 'border-line bg-surface text-muted',
+  beige: 'border-beige-strong/60 bg-beige/60 text-charcoal',
   success: 'border-success/25 bg-success/10 text-success',
-  warning: 'border-warning/25 bg-warning/10 text-warning',
+  warning: 'border-warning/25 bg-warning/10 text-warning-ink',
   danger: 'border-danger/25 bg-danger/10 text-danger',
   info: 'border-info/25 bg-info/10 text-info',
 };
@@ -12,7 +17,7 @@ const TONES = {
 export const Badge = ({ tone = 'neutral', className, children }) => (
   <span
     className={cx(
-      'inline-flex items-center gap-1.5 rounded-full border px-2.5 py-0.5 text-[11px] font-semibold tracking-wide uppercase',
+      'inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-micro font-semibold tracking-[0.06em] uppercase',
       TONES[tone] ?? TONES.neutral,
       className,
     )}
@@ -33,7 +38,7 @@ const DOT_TONES = {
 export const StatusPill = ({ status = 'active', label, className }) => (
   <span
     className={cx(
-      'inline-flex items-center gap-2 rounded-full border border-line/80 bg-surface px-2.5 py-1 text-xs font-medium text-ink',
+      'inline-flex items-center gap-2 rounded-full border border-line bg-surface px-2.5 py-1 text-meta font-medium text-ink',
       className,
     )}
   >

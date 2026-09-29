@@ -22,7 +22,7 @@ export default function NotFoundPage({ variant = 'standalone' }) {
   return (
     <div
       className={cx(
-        'grid place-items-center px-4',
+        'grid place-items-center px-gutter',
         variant === 'app' ? 'py-10' : 'min-h-dvh bg-canvas',
       )}
     >
@@ -30,19 +30,15 @@ export default function NotFoundPage({ variant = 'standalone' }) {
         initial={{ opacity: 0, y: 16 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ duration: 0.4, ease: [0.22, 1, 0.36, 1] }}
-        className="w-full max-w-md rounded-card border border-line/70 bg-surface p-8 text-center shadow-card"
+        className="w-full max-w-md rounded-panel border border-line/70 bg-surface p-8 text-center shadow-card"
       >
         <div className="flex justify-center">
           <Logo withWordmark={false} size="lg" />
         </div>
 
-        <p className="mt-6 text-[12px] font-semibold tracking-widest text-muted uppercase">
-          Error 404
-        </p>
-        <h1 className="mt-2 text-[24px] font-semibold tracking-tight text-ink">
-          This page is not on the register
-        </h1>
-        <p className="mt-2.5 text-sm leading-relaxed text-muted">
+        <p className="mt-6 eyebrow">Error 404</p>
+        <h1 className="mt-2 text-title font-semibold text-ink">This page is not on the register</h1>
+        <p className="mt-2.5 text-label leading-relaxed text-muted">
           The page you were looking for has moved or never existed. Head back to the dashboard and
           carry on from there.
         </p>
@@ -56,7 +52,7 @@ export default function NotFoundPage({ variant = 'standalone' }) {
           </Link>
         </div>
 
-        <p className="mt-6 inline-flex items-center gap-1.5 text-[12px] text-muted">
+        <p className="mt-6 inline-flex items-center gap-1.5 text-meta text-muted">
           <Compass className="size-3.5" aria-hidden="true" />
           CampusDesk support can help if this keeps happening.
         </p>

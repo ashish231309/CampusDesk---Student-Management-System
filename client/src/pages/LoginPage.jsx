@@ -1,8 +1,9 @@
 import { useEffect, useState } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
-import { CircleAlert, Eye, EyeOff, LogIn, UserPlus } from 'lucide-react';
+import { Eye, EyeOff, LogIn, UserPlus } from 'lucide-react';
 
 import { Button } from '../components/ui/Button.jsx';
+import { FormAlert } from '../components/ui/States.jsx';
 import { Field, TextInput } from '../components/ui/Field.jsx';
 import { useAuth } from '../context/authContext.js';
 import { useToast } from '../context/toastContext.js';
@@ -52,22 +53,12 @@ export default function LoginPage() {
 
   return (
     <>
-      <h1 className="mt-6 text-[26px] leading-tight font-semibold tracking-tight text-ink">
-        Sign in to CampusDesk
-      </h1>
-      <p className="mt-2 text-sm leading-relaxed text-muted">
-        Sign in with the campus account you registered on this desk.
+      <h1 className="text-title font-semibold text-ink">Sign in to CampusDesk</h1>
+      <p className="mt-2.5 text-label leading-relaxed text-muted">
+        Use the campus account you registered on this desk.
       </p>
 
-      {form.submitError ? (
-        <div
-          role="alert"
-          className="mt-6 flex items-start gap-3 rounded-card border border-danger/25 bg-danger/[0.06] px-4 py-3"
-        >
-          <CircleAlert className="mt-0.5 size-4 shrink-0 text-danger" aria-hidden="true" />
-          <p className="text-[13px] leading-relaxed text-ink">{form.submitError}</p>
-        </div>
-      ) : null}
+      {form.submitError ? <FormAlert className="mt-6">{form.submitError}</FormAlert> : null}
 
       <form className="mt-6 space-y-4" onSubmit={form.handleSubmit} noValidate>
         <Field label="Email address" required error={form.errorFor('email')}>
@@ -121,7 +112,7 @@ export default function LoginPage() {
         </Button>
       </form>
 
-      <p className="mt-6 text-center text-[13px] text-muted">
+      <p className="mt-6 border-t border-line/60 pt-5 text-center text-label text-muted">
         New to CampusDesk?{' '}
         <Link
           to={paths.register}

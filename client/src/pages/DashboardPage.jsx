@@ -17,12 +17,12 @@ import { buttonClasses } from '../components/ui/buttonStyles.js';
 import { Card, CardHeader } from '../components/ui/Card.jsx';
 import { DataTable } from '../components/ui/DataTable.jsx';
 import { EmptyState, ErrorState } from '../components/ui/States.jsx';
+import { Skeleton, StatCardSkeleton } from '../components/ui/Skeleton.jsx';
 import { StatCard } from '../components/ui/StatCard.jsx';
-import { StatCardSkeleton } from '../components/ui/Skeleton.jsx';
 import { useAuth } from '../context/authContext.js';
 import { useDashboardSummary } from '../hooks/useDashboardSummary.js';
 import { errorMessage } from '../utils/apiErrors.js';
-import { formatDate, formatRelative } from '../utils/format.js';
+import { formatCount, formatDate, formatRelative } from '../utils/format.js';
 import { paths } from '../routes/paths.js';
 
 const greetingFor = (hour) => {
@@ -30,6 +30,20 @@ const greetingFor = (hour) => {
   if (hour < 17) return 'Good afternoon';
   return 'Good evening';
 };
+
+/** A single figure read out inside the greeting band. */
+const BandFigure = ({ label, value, isLoading }) => (
+  <div className="rounded-card border border-canvas/12 bg-canvas/[0.06] px-4 py-3">
+    <p className="text-micro font-semibold tracking-[0.12em] text-beige/80 uppercase">{label}</p>
+    {isLoading ? (
+      <Skeleton className="mt-2 h-7 w-16 bg-canvas/15" />
+    ) : (
+      <p className="mt-1.5 text-2xl leading-none font-semibold text-canvas tabular-nums">
+        {formatCount(value)}
+      </p>
+    )}
+  </div>
+);
 
 export default function DashboardPage() {
   const { user } = useAuth();
@@ -44,6 +58,8 @@ export default function DashboardPage() {
   }).format(new Date());
 
   const maxDepartmentCount = Math.max(...summary.byDepartment.map((row) => row.count), 1);
+  const activeShare =
+    summary.total > 0 ? Math.round((summary.active / summary.total) * 100) : 0;
 
   return (
     <>
@@ -64,7 +80,7 @@ export default function DashboardPage() {
       />
 
       {summary.isError ? (
-        <Card>
+        <Card className="mb-section">
           <ErrorState
             title={
               summary.errorKind === 'forbidden'
@@ -77,7 +93,34 @@ export default function DashboardPage() {
         </Card>
       ) : null}
 
-      <section aria-label="Register summary" className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+      {/* The one band in the product that carries the identity: dark ground,
+          beige accents, and the four figures someone opens this page to see. */}
+      <section
+        aria-label="Register at a glance"
+        className="rounded-panel border border-charcoal bg-charcoal px-panel py-5 shadow-card sm:px-gutter"
+      >
+        <div className="flex flex-col gap-5 lg:flex-row lg:items-center lg:justify-between">
+          <div className="min-w-0">
+            <p className="text-micro font-semibold tracking-[0.14em] text-beige/80 uppercase">
+              Register at a glance
+            </p>
+            <p className="mt-2 max-w-xl text-subheading leading-relaxed text-canvas/80">
+              {summary.isLoading
+                ? 'Reading the register…'
+                : `${formatCount(summary.total)} students on CampusDesk across ${formatCount(
+                    summary.departmentCount,
+                  )} ${summary.departmentCount === 1 ? 'department' : 'departments'}.`}
+            </p>
+          </div>
+
+          <div className="grid w-full grid-cols-2 gap-3 sm:max-w-md lg:w-auto">
+            <BandFigure label="On register" value={summary.total} isLoading={summary.isLoading} />
+            <BandFigure label="Active now" value={summary.active} isLoading={summary.isLoading} />
+          </div>
+        </div>
+      </section>
+
+      <section aria-label="Register summary" className="mt-section grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
         {summary.isLoading ? (
           Array.from({ length: 4 }).map((_, index) => <StatCardSkeleton key={index} />)
         ) : (
@@ -94,7 +137,7 @@ export default function DashboardPage() {
               index={1}
               label="Active enrollments"
               value={summary.active}
-              hint={`${Math.round((summary.active / Math.max(summary.total, 1)) * 100)}% of the register`}
+              hint={`${activeShare}% of the register`}
               icon={UserRoundCheck}
               tone="success"
             />
@@ -118,16 +161,17 @@ export default function DashboardPage() {
         )}
       </section>
 
-      <div className="mt-6 grid gap-6 xl:grid-cols-[1.35fr_1fr]">
+      <div className="mt-section grid gap-6 xl:grid-cols-[1.35fr_1fr]">
         <Card className="overflow-hidden">
           <CardHeader
+            eyebrow="Latest activity"
             title="Recent registrations"
             description="The newest students added to CampusDesk."
             icon={CalendarCheck}
             action={
               <Link
                 to={paths.students}
-                className="inline-flex items-center gap-1 rounded text-[13px] font-semibold text-charcoal transition-colors hover:text-ink"
+                className="inline-flex items-center gap-1 rounded text-label font-semibold text-charcoal transition-colors hover:text-ink"
               >
                 View all
                 <ArrowUpRight className="size-3.5" aria-hidden="true" />
@@ -147,14 +191,14 @@ export default function DashboardPage() {
                 render: (student) => (
                   <Link
                     to={paths.student(student.id)}
-                    className="flex items-center gap-3 rounded transition-colors hover:text-ink"
+                    className="group flex items-center gap-3 rounded transition-colors"
                   >
                     <Avatar name={student.name} size="sm" />
                     <span className="min-w-0">
-                      <span className="block truncate text-[13px] font-semibold text-ink">
+                      <span className="block truncate text-body font-semibold text-ink group-hover:underline group-hover:underline-offset-4">
                         {student.name}
                       </span>
-                      <span className="block truncate text-[12px] text-muted">
+                      <span className="block truncate text-meta text-muted">
                         {student.studentId}
                       </span>
                     </span>
@@ -165,7 +209,7 @@ export default function DashboardPage() {
                 key: 'course',
                 header: 'Course',
                 render: (student) => (
-                  <span className="block max-w-[220px] truncate text-[13px] text-charcoal">
+                  <span className="block max-w-[14rem] truncate text-label text-charcoal">
                     {student.course}
                   </span>
                 ),
@@ -174,20 +218,20 @@ export default function DashboardPage() {
                 key: 'registered',
                 header: 'Registered',
                 render: (student) => (
-                  <span className="text-[13px] text-muted">
+                  <span className="text-label whitespace-nowrap text-muted">
                     {formatDate(student.dateOfRegistration)}
                   </span>
                 ),
               },
             ]}
             renderMobileCard={(student) => (
-              <Link to={paths.student(student.id)} className="flex items-center gap-3 px-4 py-3.5">
+              <Link to={paths.student(student.id)} className="flex items-center gap-3 px-panel py-3.5">
                 <Avatar name={student.name} size="sm" />
                 <span className="min-w-0 flex-1">
-                  <span className="block truncate text-[13px] font-semibold text-ink">
+                  <span className="block truncate text-body font-semibold text-ink">
                     {student.name}
                   </span>
-                  <span className="block truncate text-[12px] text-muted">
+                  <span className="block truncate text-meta text-muted">
                     {student.studentId} · {formatRelative(student.dateOfRegistration)}
                   </span>
                 </span>
@@ -212,63 +256,87 @@ export default function DashboardPage() {
         <div className="space-y-6">
           <Card>
             <CardHeader
+              eyebrow="Distribution"
               title="Enrollment by department"
               description="Where the register is concentrated today."
               icon={Layers}
             />
 
-            <div className="space-y-3.5 px-5 py-4">
-              {summary.isLoading
-                ? Array.from({ length: 4 }).map((_, index) => (
-                    <div key={index} className="animate-pulse space-y-2">
-                      <span className="block h-3 w-32 rounded bg-line/60" />
-                      <span className="block h-2 w-full rounded bg-line/50" />
+            <div className="space-y-4 px-panel py-5">
+              {summary.isLoading ? (
+                Array.from({ length: 4 }).map((_, index) => (
+                  <div key={index} className="space-y-2">
+                    <Skeleton className="h-3 w-32" />
+                    <Skeleton className="h-2 w-full" />
+                  </div>
+                ))
+              ) : summary.byDepartment.length === 0 ? (
+                <p className="text-label text-muted">
+                  No students yet — add one and the distribution appears here.
+                </p>
+              ) : (
+                summary.byDepartment.slice(0, 5).map((row) => (
+                  <div key={row.label}>
+                    <div className="flex items-baseline justify-between gap-3">
+                      <p className="truncate text-label font-medium text-charcoal">{row.label}</p>
+                      <p className="text-label font-semibold text-ink tabular-nums">{row.count}</p>
                     </div>
-                  ))
-                : summary.byDepartment.length === 0
-                ? (
-                    <p className="text-[13px] text-muted">
-                      No students yet — add one and the distribution appears here.
-                    </p>
-                  )
-                : summary.byDepartment.slice(0, 5).map((row) => (
-                    <div key={row.label}>
-                      <div className="flex items-baseline justify-between gap-3">
-                        <p className="truncate text-[13px] font-medium text-charcoal">{row.label}</p>
-                        <p className="text-[13px] font-semibold text-ink tabular-nums">{row.count}</p>
-                      </div>
 
-                      <div className="mt-1.5 h-2 overflow-hidden rounded-full bg-canvas">
-                        <div
-                          className="h-full rounded-full bg-beige-strong transition-[width] duration-700 ease-out"
-                          style={{ width: `${(row.count / maxDepartmentCount) * 100}%` }}
-                        />
-                      </div>
+                    <div className="mt-2 h-2 overflow-hidden rounded-full bg-canvas-deep">
+                      <div
+                        className="h-full rounded-full bg-beige-strong transition-[width] duration-700 ease-out"
+                        style={{ width: `${(row.count / maxDepartmentCount) * 100}%` }}
+                      />
                     </div>
-                  ))}
+                  </div>
+                ))
+              )}
             </div>
           </Card>
 
           <Card>
-            <CardHeader title="Enrollment status" description="Active versus inactive records." icon={UserRoundCheck} />
+            <CardHeader
+              eyebrow="Enrolment"
+              title="Active and inactive"
+              description="How the register divides today."
+              icon={UserRoundCheck}
+            />
 
-            <ul className="divide-y divide-line/60">
+            <div className="px-panel py-5">
               {summary.isLoading ? (
-                <li className="px-5 py-4">
-                  <span className="block h-4 w-40 animate-pulse rounded bg-line/60" />
-                </li>
+                <Skeleton className="h-12 w-full" />
               ) : (
-                [
-                  { label: 'Active', value: summary.active, status: 'active' },
-                  { label: 'Inactive', value: summary.inactive, status: 'inactive' },
-                ].map((row) => (
-                  <li key={row.label} className="flex items-center justify-between px-5 py-3.5">
-                    <StatusPill status={row.status} label={row.label} />
-                    <span className="text-sm font-semibold text-ink tabular-nums">{row.value}</span>
-                  </li>
-                ))
+                <>
+                  {/* One bar, two real proportions — no fabricated chart. */}
+                  <div
+                    className="flex h-2.5 overflow-hidden rounded-full bg-canvas-deep"
+                    role="img"
+                    aria-label={`${activeShare}% of records are active`}
+                  >
+                    <span className="bg-success" style={{ width: `${activeShare}%` }} />
+                    <span className="bg-line-strong" style={{ width: `${100 - activeShare}%` }} />
+                  </div>
+
+                  <ul className="mt-4 space-y-2.5">
+                    {[
+                      { label: 'Active', value: summary.active, status: 'active' },
+                      { label: 'Inactive', value: summary.inactive, status: 'inactive' },
+                    ].map((row) => (
+                      <li key={row.label} className="flex items-center justify-between gap-3">
+                        <StatusPill status={row.status} label={row.label} />
+                        <span className="text-body font-semibold text-ink tabular-nums">
+                          {formatCount(row.value)}
+                        </span>
+                      </li>
+                    ))}
+                  </ul>
+
+                  <p className="mt-4 border-t border-line/60 pt-4 text-meta leading-relaxed text-muted">
+                    Status controls whether a student is counted in active enrolment figures.
+                  </p>
+                </>
               )}
-            </ul>
+            </div>
           </Card>
         </div>
       </div>

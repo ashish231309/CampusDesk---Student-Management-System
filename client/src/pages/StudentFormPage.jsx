@@ -1,6 +1,16 @@
 import { useEffect } from 'react';
 import { Link, useLocation, useNavigate, useParams } from 'react-router-dom';
-import { CircleAlert, IdCard, Save, Sparkles, UserRound } from 'lucide-react';
+import {
+  CalendarDays,
+  GraduationCap,
+  IdCard,
+  Mail,
+  Phone,
+  Save,
+  ShieldAlert,
+  Sparkles,
+  UserRound,
+} from 'lucide-react';
 
 import { PageHeader } from '../components/layout/PageHeader.jsx';
 import { Button } from '../components/ui/Button.jsx';
@@ -8,7 +18,7 @@ import { buttonClasses } from '../components/ui/buttonStyles.js';
 import { Card, CardBody, CardHeader } from '../components/ui/Card.jsx';
 import { Field, Select, TextInput } from '../components/ui/Field.jsx';
 import { SegmentedControl } from '../components/ui/SegmentedControl.jsx';
-import { EmptyState, ErrorState } from '../components/ui/States.jsx';
+import { EmptyState, ErrorState, FormAlert } from '../components/ui/States.jsx';
 import { Spinner } from '../components/ui/Spinner.jsx';
 import { useToast } from '../context/toastContext.js';
 import { useAuth } from '../context/authContext.js';
@@ -197,22 +207,15 @@ export default function StudentFormPage({ mode = 'create' }) {
         }
       />
 
-      <form onSubmit={form.handleSubmit} noValidate className="grid gap-6 lg:grid-cols-[1.4fr_0.6fr]">
+      <form onSubmit={form.handleSubmit} noValidate className="grid gap-6 lg:grid-cols-[1.45fr_1fr]">
         <div className="space-y-6">
-          {form.submitError ? (
-            <div
-              role="alert"
-              className="flex items-start gap-3 rounded-card border border-danger/25 bg-danger/[0.06] px-4 py-3"
-            >
-              <CircleAlert className="mt-0.5 size-4 shrink-0 text-danger" aria-hidden="true" />
-              <p className="text-[13px] leading-relaxed text-ink">{form.submitError}</p>
-            </div>
-          ) : null}
+          {form.submitError ? <FormAlert>{form.submitError}</FormAlert> : null}
 
           <Card>
             <CardHeader
-              title="Student details"
-              description="Required information for the campus register."
+              eyebrow="Section 1"
+              title="Student identity"
+              description="The name this student is registered under."
               icon={UserRound}
             />
 
@@ -229,39 +232,38 @@ export default function StudentFormPage({ mode = 'create' }) {
                 />
               </Field>
 
-              <div className="grid gap-5 sm:grid-cols-2">
-                <Field label="Email address" required error={form.errorFor('email')}>
-                  <TextInput
-                    type="email"
-                    name="email"
-                    autoComplete="email"
-                    placeholder="student@campusdesk.edu"
-                    value={form.values.email}
-                    onChange={form.handleChange('email')}
-                    onBlur={form.handleBlur('email')}
-                    hasError={Boolean(form.errorFor('email'))}
-                  />
-                </Field>
+              <Field
+                label="Profile photo"
+                error={form.errorFor('avatarUrl')}
+                hint="Optional. A link to a hosted photo of the student."
+              >
+                <TextInput
+                  type="url"
+                  name="avatarUrl"
+                  placeholder="https://…"
+                  value={form.values.avatarUrl}
+                  onChange={form.handleChange('avatarUrl')}
+                  onBlur={form.handleBlur('avatarUrl')}
+                  hasError={Boolean(form.errorFor('avatarUrl'))}
+                />
+              </Field>
+            </CardBody>
+          </Card>
 
-                <Field label="Phone number" required error={form.errorFor('phone')}>
-                  <TextInput
-                    type="tel"
-                    name="phone"
-                    autoComplete="tel"
-                    placeholder="+91 98220 41182"
-                    value={form.values.phone}
-                    onChange={form.handleChange('phone')}
-                    onBlur={form.handleBlur('phone')}
-                    hasError={Boolean(form.errorFor('phone'))}
-                  />
-                </Field>
-              </div>
+          <Card>
+            <CardHeader
+              eyebrow="Section 2"
+              title="Academic information"
+              description="What the student is studying and where they sit in the register."
+              icon={GraduationCap}
+            />
 
+            <CardBody className="space-y-5">
               <Field
                 label="Course"
                 required
                 error={form.errorFor('course')}
-                hint="Start typing to pick a common course, or enter your own."
+                hint="Start typing to pick a course already on the register, or enter your own."
               >
                 <TextInput
                   name="course"
@@ -315,53 +317,98 @@ export default function StudentFormPage({ mode = 'create' }) {
                   </Select>
                 </Field>
               </div>
+            </CardBody>
+          </Card>
 
-              <div className="grid gap-5 sm:grid-cols-2">
-                <Field
-                  label="Date of registration"
-                  required
-                  error={form.errorFor('dateOfRegistration')}
-                  hint={
-                    canEditRegistrationDate
-                      ? undefined
-                      : 'Only an administrator can change this after the record exists.'
-                  }
-                >
-                  <TextInput
-                    type="date"
-                    name="dateOfRegistration"
-                    max={todayIso()}
-                    value={form.values.dateOfRegistration}
-                    onChange={form.handleChange('dateOfRegistration')}
-                    onBlur={form.handleBlur('dateOfRegistration')}
-                    hasError={Boolean(form.errorFor('dateOfRegistration'))}
-                    disabled={!canEditRegistrationDate}
-                  />
-                </Field>
+          <Card>
+            <CardHeader
+              eyebrow="Section 3"
+              title="Contact information"
+              description="How the campus reaches this student."
+              icon={Mail}
+            />
 
-                <Field
-                  label="Profile photo"
-                  error={form.errorFor('avatarUrl')}
-                  hint="Optional link to a hosted photo."
-                >
-                  <TextInput
-                    type="url"
-                    name="avatarUrl"
-                    placeholder="https://…"
-                    value={form.values.avatarUrl}
-                    onChange={form.handleChange('avatarUrl')}
-                    onBlur={form.handleBlur('avatarUrl')}
-                    hasError={Boolean(form.errorFor('avatarUrl'))}
-                  />
-                </Field>
-              </div>
+            <CardBody className="grid gap-5 sm:grid-cols-2">
+              <Field label="Email address" required error={form.errorFor('email')}>
+                <TextInput
+                  type="email"
+                  name="email"
+                  autoComplete="email"
+                  placeholder="student@campusdesk.edu"
+                  value={form.values.email}
+                  onChange={form.handleChange('email')}
+                  onBlur={form.handleBlur('email')}
+                  hasError={Boolean(form.errorFor('email'))}
+                />
+              </Field>
+
+              <Field label="Phone number" required error={form.errorFor('phone')}>
+                <TextInput
+                  type="tel"
+                  name="phone"
+                  autoComplete="tel"
+                  placeholder="+91 98220 41182"
+                  value={form.values.phone}
+                  onChange={form.handleChange('phone')}
+                  onBlur={form.handleBlur('phone')}
+                  hasError={Boolean(form.errorFor('phone'))}
+                />
+              </Field>
+            </CardBody>
+          </Card>
+
+          <Card>
+            <CardHeader
+              eyebrow="Section 4"
+              title="Registration"
+              description="When this record entered the register."
+              icon={CalendarDays}
+            />
+
+            <CardBody className="space-y-5">
+              <Field
+                label="Date of registration"
+                required
+                error={form.errorFor('dateOfRegistration')}
+                hint={
+                  canEditRegistrationDate
+                    ? 'Defaults to today. Future dates are not accepted.'
+                    : undefined
+                }
+              >
+                <TextInput
+                  type="date"
+                  name="dateOfRegistration"
+                  max={todayIso()}
+                  value={form.values.dateOfRegistration}
+                  onChange={form.handleChange('dateOfRegistration')}
+                  onBlur={form.handleBlur('dateOfRegistration')}
+                  hasError={Boolean(form.errorFor('dateOfRegistration'))}
+                  disabled={!canEditRegistrationDate}
+                />
+              </Field>
+
+              {/* The rule is the server's; this explains it rather than
+                  offering a field that would be refused. */}
+              {canEditRegistrationDate ? null : (
+                <p className="flex items-start gap-3 rounded-card border border-line/70 bg-surface-muted px-4 py-3 text-meta leading-relaxed text-muted">
+                  <ShieldAlert className="mt-0.5 size-4 shrink-0 text-charcoal" aria-hidden="true" />
+                  The registration date is an administrative fact. It is kept from the original
+                  record and only an administrator can change it.
+                </p>
+              )}
             </CardBody>
           </Card>
         </div>
 
-        <div className="space-y-6">
+        <div className="space-y-6 lg:sticky lg:top-24 lg:self-start">
           <Card>
-            <CardHeader title="Enrollment status" icon={Sparkles} />
+            <CardHeader
+              title="Enrollment status"
+              description="Counted in active enrolment or not."
+              icon={Sparkles}
+            />
+
             <CardBody className="space-y-4">
               <SegmentedControl
                 name="enrollment-status"
@@ -374,21 +421,26 @@ export default function StudentFormPage({ mode = 'create' }) {
                 onChange={(value) => form.setFieldValue('enrollmentStatus', value)}
               />
 
-              <p className="text-[13px] leading-relaxed text-muted">
+              <p className="text-label leading-relaxed text-muted">
                 Inactive students stay on record but are excluded from active enrolment counts.
               </p>
             </CardBody>
           </Card>
 
           <Card>
-            <CardHeader title="Student ID" icon={IdCard} />
+            <CardHeader
+              title="Student ID"
+              description="Issued by CampusDesk — never typed by hand."
+              icon={IdCard}
+            />
+
             <CardBody>
               {isEdit && student ? (
-                <p className="rounded-xl border border-dashed border-line bg-canvas/60 px-3.5 py-3 font-mono text-[13px] font-semibold tracking-wide text-ink">
+                <p className="rounded-field border border-dashed border-line-strong bg-canvas/70 px-3.5 py-3 font-mono text-label font-semibold tracking-wide text-ink">
                   {student.studentId}
                 </p>
               ) : (
-                <p className="rounded-xl border border-dashed border-line bg-canvas/60 px-3.5 py-3 text-[13px] leading-relaxed text-muted">
+                <p className="rounded-field border border-dashed border-line-strong bg-canvas/70 px-3.5 py-3 text-label leading-relaxed text-muted">
                   CampusDesk generates a unique ID such as{' '}
                   <span className="font-mono font-semibold text-charcoal">
                     CDS-{new Date().getFullYear()}-0001
@@ -399,8 +451,8 @@ export default function StudentFormPage({ mode = 'create' }) {
             </CardBody>
           </Card>
 
-          <Card>
-            <CardBody className="flex flex-col gap-2.5">
+          <Card tone="quiet">
+            <CardBody className="space-y-2.5">
               <Button
                 type="submit"
                 size="lg"
@@ -418,6 +470,12 @@ export default function StudentFormPage({ mode = 'create' }) {
               >
                 Cancel
               </Link>
+
+              <p className="pt-1 text-center text-meta leading-relaxed text-muted">
+                {isEdit
+                  ? 'Only the fields you changed are sent to the register.'
+                  : 'The student ID is created when you save.'}
+              </p>
             </CardBody>
           </Card>
         </div>

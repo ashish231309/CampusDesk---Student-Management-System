@@ -1,37 +1,49 @@
 import { Children, cloneElement, forwardRef, isValidElement, useId } from 'react';
-import { ChevronDown } from 'lucide-react';
+import { ChevronDown, CircleAlert } from 'lucide-react';
 
 import { cx } from '../../utils/cx.js';
 
 const baseControl =
-  'w-full rounded-field border bg-surface px-3.5 text-sm text-ink transition-colors duration-150 placeholder:text-muted/70 hover:border-charcoal/30 focus:outline-none focus-visible:border-charcoal focus-visible:ring-2 focus-visible:ring-charcoal/15 disabled:cursor-not-allowed disabled:bg-canvas disabled:text-muted';
+  'w-full rounded-field border bg-surface px-3.5 text-ink transition-[border-color,box-shadow,background-color] duration-150 placeholder:text-muted/70 hover:border-line-strong focus:outline-none focus-visible:border-charcoal focus-visible:ring-2 focus-visible:ring-charcoal/18 disabled:cursor-not-allowed disabled:border-line/70 disabled:bg-canvas disabled:text-muted';
 
 const controlClasses = ({ hasError, className } = {}) =>
   cx(
     baseControl,
-    'h-11',
-    hasError ? 'border-danger focus-visible:border-danger focus-visible:ring-danger/15' : 'border-line',
+    'text-body',
+    hasError
+      ? 'border-danger focus-visible:border-danger focus-visible:ring-danger/18'
+      : 'border-line',
     className,
   );
 
-/** Label + control + message, wired together for accessibility. */
-export const Field = ({ id, label, hint, error, required, children, className }) => {
+/**
+ * Label + control + message, wired together for accessibility:
+ * the label points at the control, and any hint or error is announced through
+ * `aria-describedby` with `aria-invalid` set when the field is rejected.
+ */
+export const Field = ({ id, label, hint, error, required, children, className, labelAction }) => {
   const generatedId = useId();
   const fieldId = id ?? generatedId;
   const messageId = `${fieldId}-message`;
 
   return (
     <div className={cx('space-y-1.5', className)}>
-      <label htmlFor={fieldId} className="block text-[13px] font-semibold text-charcoal">
-        {label}
-        {required ? (
-          <span className="ml-1 text-danger" aria-hidden="true">
-            *
-          </span>
-        ) : (
-          <span className="ml-1.5 text-[11px] font-medium text-muted">optional</span>
-        )}
-      </label>
+      <div className="flex items-baseline justify-between gap-3">
+        <label htmlFor={fieldId} className="field-label">
+          {label}
+          {required ? (
+            <span className="ml-1 text-danger" aria-hidden="true">
+              *
+            </span>
+          ) : (
+            <span className="ml-1.5 text-micro font-medium tracking-normal text-muted normal-case">
+              optional
+            </span>
+          )}
+        </label>
+
+        {labelAction}
+      </div>
 
       {/* The first child is the control; anything after it (such as a reveal
           button) is positioned against this wrapper. */}
@@ -48,11 +60,12 @@ export const Field = ({ id, label, hint, error, required, children, className })
       </div>
 
       {error ? (
-        <p id={messageId} className="text-[13px] font-medium text-danger">
+        <p id={messageId} className="flex items-start gap-1.5 text-meta font-medium text-danger">
+          <CircleAlert className="mt-0.5 size-3.5 shrink-0" aria-hidden="true" />
           {error}
         </p>
       ) : hint ? (
-        <p id={messageId} className="text-[13px] text-muted">
+        <p id={messageId} className="text-meta text-muted">
           {hint}
         </p>
       ) : null}
@@ -61,7 +74,9 @@ export const Field = ({ id, label, hint, error, required, children, className })
 };
 
 export const TextInput = forwardRef(function TextInput({ hasError, className, ...rest }, ref) {
-  return <input ref={ref} className={controlClasses({ hasError, className })} {...rest} />;
+  return (
+    <input ref={ref} className={cx(controlClasses({ hasError, className }), 'h-11')} {...rest} />
+  );
 });
 
 export const Select = forwardRef(function Select(
@@ -72,7 +87,7 @@ export const Select = forwardRef(function Select(
     <div className="relative">
       <select
         ref={ref}
-        className={cx(controlClasses({ hasError }), 'appearance-none pr-10', className)}
+        className={cx(controlClasses({ hasError }), 'h-11 appearance-none pr-10', className)}
         {...rest}
       >
         {children}

@@ -119,4 +119,28 @@ later stages, and database-backed verification wherever MongoDB is available.
   shows the loader rather than the page, and the navigation marks exactly one
   section at a time
 
-## Stage 07 — CampusDesk design system & responsive UI  ⏳
+## Stage 07 — CampusDesk design system & responsive UI  ✅
+
+- The palette now lives in one place as tokens (surfaces, text, borders, the four
+  status tones) alongside a type scale, a spacing rhythm, three radii and three
+  shadow levels; no screen hardcodes a colour or a pixel font size any more
+- One panel hierarchy instead of one repeated card: resting surface, quiet
+  surface, inset group, accent panel, and the single dark band the dashboard uses
+- Buttons have five variants with a clear job each; destructive actions carry an
+  icon, a label and a filled danger button so colour is never the only signal
+- Form controls share one shape, hover, focus, disabled and error treatment, and
+  the create/edit form is grouped into identity, academic, contact and
+  registration sections with the staff date restriction explained in place
+- The register toolbar reads as three groups — search, narrow, show — and the
+  table has a quiet head, hairline rows and hover feedback; the mobile card leads
+  with identity, then the facts, then the actions at thumb height
+- The dashboard opens on a dark summary band with two live figures, then the
+  metric row, the department distribution and the active/inactive split
+- Dialogs are bottom sheets on phones, trap Tab and restore focus; toasts keep
+  four tones that read without colour; the sidebar ends on the action users want
+- `npm run verify` grew to 143 checks, including a design-system section (palette
+  tokens, no stray colours, the scale, panel hierarchy, button and field states,
+  responsive construction, state design, dialog/toast patterns, subtle motion)
+  and a structural render check (one h1, labelled controls, skeleton loading)
+
+## Stage 08 — Authentication & student management interface  ⏳

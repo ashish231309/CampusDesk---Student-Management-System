@@ -53,7 +53,7 @@ export class AppErrorBoundary extends Component {
             <CircleAlert className="size-5" aria-hidden="true" />
           </span>
 
-          <h1 className="mt-4 text-[22px] font-semibold tracking-tight text-ink">
+          <h1 className="mt-4 text-title font-semibold text-ink">
             Something went wrong on this screen
           </h1>
           <p className="mt-2.5 text-sm leading-relaxed text-muted">
@@ -71,7 +71,7 @@ export class AppErrorBoundary extends Component {
             </Link>
           </div>
 
-          <p className="mt-6 text-[12px] text-muted">
+          <p className="mt-6 text-meta text-muted">
             If this keeps happening, tell CampusDesk support what you were doing when it stopped.
           </p>
         </div>

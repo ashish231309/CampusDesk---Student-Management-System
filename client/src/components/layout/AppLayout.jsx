@@ -50,7 +50,7 @@ export const AppLayout = ({ children }) => {
     <div className="min-h-dvh bg-canvas">
       <a
         href="#main-content"
-        className="focus-ring sr-only focus:not-sr-only focus:absolute focus:top-3 focus:left-3 focus:z-50 focus:rounded-field focus:bg-surface focus:px-4 focus:py-2 focus:text-sm focus:font-semibold focus:text-ink focus:shadow-raised"
+        className="focus-ring sr-only focus:not-sr-only focus:absolute focus:top-3 focus:left-3 focus:z-50 focus:rounded-field focus:border focus:border-line focus:bg-surface focus:px-4 focus:py-2 focus:text-body focus:font-semibold focus:text-ink focus:shadow-raised"
       >
         Skip to content
       </a>
@@ -60,14 +60,17 @@ export const AppLayout = ({ children }) => {
       <div className="lg:pl-[264px]">
         <Topbar onOpenNavigation={() => setDrawerRoute(pathname)} />
 
-        <main id="main-content" className="mx-auto w-full max-w-[1320px] px-4 py-6 sm:px-6 lg:px-8">
+        <main
+          id="main-content"
+          className="mx-auto w-full max-w-[1360px] px-gutter py-6 sm:px-6 lg:px-gutter-lg lg:py-8"
+        >
           <Suspense fallback={<ContentLoader />}>
             <PageTransition key={routePattern}>{children ?? <Outlet />}</PageTransition>
           </Suspense>
         </main>
 
-        <footer className="mx-auto w-full max-w-[1320px] px-4 pb-8 sm:px-6 lg:px-8">
-          <div className="flex flex-col gap-1 border-t border-line/60 pt-4 text-[12px] text-muted sm:flex-row sm:items-center sm:justify-between">
+        <footer className="mx-auto w-full max-w-[1360px] px-gutter pb-8 sm:px-6 lg:px-gutter-lg">
+          <div className="flex flex-col gap-1 border-t border-line/60 pt-4 text-meta text-muted sm:flex-row sm:items-center sm:justify-between">
             <p>
               {appConfig.name} · {appConfig.tagline}
             </p>
