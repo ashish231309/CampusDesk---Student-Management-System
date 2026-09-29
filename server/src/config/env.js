@@ -69,6 +69,11 @@ export const env = Object.freeze({
       windowMs: readNumber('RATE_LIMIT_WINDOW_MS', 15 * 60 * 1000),
       max: readNumber('RATE_LIMIT_MAX', 500),
     },
+    // Stricter budget for the endpoints that accept credentials.
+    authRateLimit: {
+      windowMs: readNumber('AUTH_RATE_LIMIT_WINDOW_MS', 15 * 60 * 1000),
+      max: readNumber('AUTH_RATE_LIMIT_MAX', 30),
+    },
   },
 
   logLevel: readString('LOG_LEVEL', isProduction ? 'info' : 'debug'),

@@ -1,9 +1,9 @@
 import { api } from './apiClient.js';
 
 /**
- * Thin wrapper over the authentication endpoints. The API currently answers
- * these with 501 until the authentication stage lands; the call signatures are
- * final so only the provider has to change later.
+ * Thin wrapper over the authentication endpoints. Every authentication request
+ * in the app goes through here — components never call `api.post('/auth/...')`
+ * themselves, so the endpoint names and payload shapes live in one file.
  */
 export const authService = {
   register: (payload) => api.post('/auth/register', payload),

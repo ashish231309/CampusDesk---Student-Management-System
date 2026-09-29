@@ -1,14 +1,15 @@
 import bcrypt from 'bcryptjs';
 import mongoose from 'mongoose';
 import { env } from '../config/env.js';
+import { DEFAULT_REGISTRATION_ROLE, USER_ROLES } from '../constants/auth.js';
 
-export const USER_ROLES = Object.freeze(['admin', 'staff']);
+export { USER_ROLES };
 
 /**
  * Administrator / staff account used to sign in to CampusDesk.
  * Only a bcrypt hash is ever persisted — plaintext passwords are never stored
- * or logged. Authentication endpoints are wired up in a later build stage, but
- * the model is final so nothing has to be migrated later.
+ * or logged. The role defaults to the least privileged one: an account created
+ * without an explicit role must never come out an administrator.
  */
 const userSchema = new mongoose.Schema(
   {
@@ -35,7 +36,7 @@ const userSchema = new mongoose.Schema(
     role: {
       type: String,
       enum: { values: USER_ROLES, message: '`{VALUE}` is not a supported role.' },
-      default: 'admin',
+      default: DEFAULT_REGISTRATION_ROLE,
     },
     lastLoginAt: { type: Date, default: null },
   },
@@ -44,7 +45,11 @@ const userSchema = new mongoose.Schema(
     toJSON: {
       virtuals: true,
       transform: (_doc, ret) => {
+        // `id` (the virtual) is the public identifier; the raw `_id`, the hash
+        // and the password virtual never leave the server.
+        delete ret._id;
         delete ret.passwordHash;
+        delete ret.password;
         delete ret.__v;
         return ret;
       },

@@ -9,6 +9,7 @@ import { paths } from './paths.js';
 // Pages are code-split so the first paint of the public page stays small.
 const LandingPage = lazy(() => import('../pages/LandingPage.jsx'));
 const LoginPage = lazy(() => import('../pages/LoginPage.jsx'));
+const RegisterPage = lazy(() => import('../pages/RegisterPage.jsx'));
 const DashboardPage = lazy(() => import('../pages/DashboardPage.jsx'));
 const StudentsPage = lazy(() => import('../pages/StudentsPage.jsx'));
 const StudentDetailPage = lazy(() => import('../pages/StudentDetailPage.jsx'));
@@ -21,6 +22,7 @@ export const AppRoutes = () => (
       {/* Public */}
       <Route path={paths.home} element={<LandingPage />} />
       <Route path={paths.login} element={<LoginPage />} />
+      <Route path={paths.register} element={<RegisterPage />} />
 
       {/* Signed-in area */}
       <Route element={<ProtectedRoute />}>

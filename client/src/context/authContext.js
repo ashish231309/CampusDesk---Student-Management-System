@@ -3,9 +3,10 @@ import { createContext, useContext } from 'react';
 export const AuthContext = createContext(null);
 
 /**
- * Authentication state for the whole app.
- * `status` is 'loading' while the session is being restored, which is what the
- * protected routes wait for before deciding to redirect.
+ * Authentication state for the whole app: the current user, the session status
+ * and the three actions that change them. `status` is 'loading' while a stored
+ * token is being verified against `/api/auth/me`, which is what the protected
+ * routes wait for before deciding to redirect.
  */
 export const useAuth = () => {
   const context = useContext(AuthContext);

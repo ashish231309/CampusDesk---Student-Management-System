@@ -29,8 +29,13 @@ export class ApiRequestError extends Error {
   }
 }
 
-/** Session token storage. Used by the authentication stage; kept here so every
- * request path shares one implementation. */
+/**
+ * Session token storage.
+ *
+ * CampusDesk authenticates with a bearer token that the client keeps and sends
+ * on every request. It lives here — not in a component — so there is exactly
+ * one place that reads, writes or clears it.
+ */
 export const authToken = {
   get: () => {
     try {
@@ -54,6 +59,30 @@ export const authToken = {
       /* ignore */
     }
   },
+};
+
+/**
+ * A 401 from these endpoints means "those credentials are wrong", not "your
+ * session ended" — so they must not wipe an existing session.
+ */
+const CREDENTIAL_ENDPOINTS = ['/auth/login', '/auth/register'];
+
+const unauthorizedListeners = new Set();
+
+/**
+ * Called when the API rejects the stored token (expired, revoked account or a
+ * token signed for another secret). Whoever owns the session state subscribes
+ * and drops it, so the UI can never stay in an authenticated-looking state with
+ * a token the API no longer accepts.
+ */
+export const onUnauthorized = (listener) => {
+  unauthorizedListeners.add(listener);
+  return () => unauthorizedListeners.delete(listener);
+};
+
+const notifyUnauthorized = () => {
+  authToken.clear();
+  unauthorizedListeners.forEach((listener) => listener());
 };
 
 const buildUrl = (path) => `${appConfig.apiBaseUrl}${path.startsWith('/') ? path : `/${path}`}`;
@@ -94,13 +123,16 @@ const request = async (path, { method = 'GET', body, query, signal, timeout } = 
       method,
       headers,
       body: body === undefined ? undefined : JSON.stringify(body),
-      credentials: 'include',
       signal: controller.signal,
     });
 
     const payload = await parseBody(response);
 
     if (!response.ok) {
+      if (response.status === 401 && token && !CREDENTIAL_ENDPOINTS.includes(path)) {
+        notifyUnauthorized();
+      }
+
       throw new ApiRequestError(
         payload?.error?.message ?? `The request failed with status ${response.status}.`,
         {

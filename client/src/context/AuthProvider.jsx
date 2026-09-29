@@ -1,47 +1,37 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 
 import { AuthContext } from './authContext.js';
-import { appConfig } from '../config/app.js';
 import { authService } from '../services/authService.js';
-import { authToken } from '../services/apiClient.js';
+import { authToken, onUnauthorized } from '../services/apiClient.js';
 
 /**
- * The stand-in identity used by the development preview session. It is only
- * ever set when `appConfig.previewSession` is true (development builds), so a
- * production bundle can never end up authenticated by accident.
+ * The single source of truth for who is signed in.
+ *
+ * `status` is 'loading' while a stored token is being checked against
+ * `/api/auth/me`, which is what stops a page refresh from bouncing a signed-in
+ * user to the login screen. The server is the only thing that decides whether a
+ * session is real — this provider just reflects its answers, and drops the
+ * session the moment the API stops accepting the token.
  */
-const PREVIEW_USER = {
-  id: 'preview',
-  name: 'Campus Administrator',
-  email: 'admin@campusdesk.edu',
-  role: 'admin',
-};
-
-/**
- * A stored token means the session has to be verified before it can be trusted;
- * without one there is nothing to wait for, so the first render already knows
- * whether the visitor is anonymous or in a development preview session.
- */
-const storedToken = authToken.get();
-const startsInPreview = !storedToken && appConfig.previewSession;
-
 export const AuthProvider = ({ children }) => {
-  const [status, setStatus] = useState(() => {
-    if (storedToken) return 'loading';
-    return startsInPreview ? 'authenticated' : 'anonymous';
-  });
-  const [user, setUser] = useState(() => (startsInPreview ? PREVIEW_USER : null));
-  const [isPreview, setIsPreview] = useState(startsInPreview);
+  const [status, setStatus] = useState(() => (authToken.get() ? 'loading' : 'anonymous'));
+  const [user, setUser] = useState(null);
 
-  const enterPreview = useCallback(() => {
-    setUser(PREVIEW_USER);
-    setIsPreview(true);
+  const startSession = useCallback((data) => {
+    authToken.set(data.token);
+    setUser(data.user ?? null);
     setStatus('authenticated');
   }, []);
 
-  /** Verify a stored token once, then fall back to the preview session. */
+  const endSession = useCallback(() => {
+    authToken.clear();
+    setUser(null);
+    setStatus('anonymous');
+  }, []);
+
+  /** Restore the session once on mount; the token alone is not trusted. */
   useEffect(() => {
-    if (!storedToken) return undefined;
+    if (!authToken.get()) return undefined;
 
     let active = true;
 
@@ -50,64 +40,72 @@ export const AuthProvider = ({ children }) => {
       .then((data) => {
         if (!active) return;
         setUser(data?.user ?? null);
-        setIsPreview(false);
         setStatus('authenticated');
       })
       .catch(() => {
         if (!active) return;
-        authToken.clear();
-        if (appConfig.previewSession) enterPreview();
-        else setStatus('anonymous');
+        endSession();
       });
 
     return () => {
       active = false;
     };
-  }, [enterPreview]);
+  }, [endSession]);
 
-  const login = useCallback(async (credentials) => {
-    const data = await authService.login(credentials);
-    authToken.set(data.token);
-    setUser(data.user);
-    setIsPreview(false);
-    setStatus('authenticated');
-    return data.user;
-  }, []);
+  /** An expired or rejected token anywhere in the app ends the session. */
+  useEffect(
+    () =>
+      onUnauthorized(() => {
+        setUser(null);
+        setStatus('anonymous');
+      }),
+    [],
+  );
 
-  const register = useCallback(async (payload) => {
-    const data = await authService.register(payload);
-    authToken.set(data.token);
-    setUser(data.user);
-    setIsPreview(false);
-    setStatus('authenticated');
-    return data.user;
-  }, []);
+  const login = useCallback(
+    async (credentials) => {
+      const data = await authService.login(credentials);
+      startSession(data);
+      return data.user;
+    },
+    [startSession],
+  );
 
+  const register = useCallback(
+    async (payload) => {
+      const data = await authService.register(payload);
+      startSession(data);
+      return data.user;
+    },
+    [startSession],
+  );
+
+  /**
+   * Signing out always succeeds locally: the token is discarded and the user is
+   * cleared even if the API is unreachable, because a client that cannot reach
+   * the server must still be able to end its own session.
+   */
   const logout = useCallback(async () => {
     try {
-      if (!isPreview) await authService.logout();
+      await authService.logout();
+    } catch {
+      /* The session is local; a failed request must not trap the user. */
     } finally {
-      authToken.clear();
-      setUser(null);
-      setIsPreview(false);
-      setStatus('anonymous');
+      endSession();
     }
-  }, [isPreview]);
+  }, [endSession]);
 
   const value = useMemo(
     () => ({
       status,
       isLoading: status === 'loading',
       isAuthenticated: status === 'authenticated',
-      isPreview,
-      isPreviewAvailable: appConfig.previewSession,
       user,
       login,
       register,
       logout,
-      enterPreview,
     }),
-    [enterPreview, isPreview, login, logout, register, status, user],
+    [login, logout, register, status, user],
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

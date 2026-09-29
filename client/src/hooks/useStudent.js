@@ -6,7 +6,8 @@ import { sampleStudents } from '../data/sampleStudents.js';
  *
  * The resolved record is keyed by the requested id, so a change of id reads as
  * "loading" without writing state synchronously inside the effect.
- * Falls back to the preview records until `studentService.getById` takes over.
+ * Reads the design fixture for now; `studentService.getById` takes over when the
+ * student pages are wired to the API.
  */
 export const useStudent = (id) => {
   const key = id === null || id === undefined ? null : String(id);

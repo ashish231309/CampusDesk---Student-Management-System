@@ -760,6 +760,146 @@ await check('stored passwords are never exposed or recoverable', async () => {
 });
 
 // ---------------------------------------------------------------------------
+section('Authentication (real database)');
+// ---------------------------------------------------------------------------
+
+/**
+ * The sign-in flow against a real MongoDB: accounts are created through the
+ * public endpoint, stored hashes are inspected directly, and the issued tokens
+ * are used against the protected API.
+ */
+const signUp = (overrides = {}) => {
+  sequence += 1;
+  return {
+    name: `Officer ${String(sequence).padStart(3, '0')}`,
+    email: `officer${sequence}.${Date.now()}@campusdesk.edu`,
+    password: 'CampusDesk123',
+    ...overrides,
+  };
+};
+
+let registered;
+
+await check('registration creates a staff account with a hashed password', async () => {
+  const payload = signUp();
+  const response = await request('POST', '/api/auth/register', { token: null, body: payload });
+  registered = response.body?.data;
+
+  assert(response.status === 201, `expected 201, received ${response.status}`);
+  assert(registered.user.role === 'staff', 'public registration must create a staff account');
+  assert(registered.user.id && registered.user.email === payload.email, 'the profile should identify the account');
+
+  const stored = await User.findOne({ email: payload.email }).select('+passwordHash');
+  assert(Boolean(stored), 'the account should be in the database');
+  assert(stored.passwordHash !== payload.password, 'the password must never be stored in plaintext');
+  assert(/^\$2[aby]\$/.test(stored.passwordHash), 'the password should be stored as a bcrypt hash');
+  assert(await stored.verifyPassword(payload.password), 'the stored hash should verify the password');
+
+  const raw = JSON.stringify(response.body);
+  assert(!raw.includes('passwordHash') && !raw.includes(payload.password), 'the response must not leak the password');
+  assert(stored.createdAt instanceof Date, 'timestamps should be present');
+});
+
+await check('a duplicate email is refused with 409', async () => {
+  const payload = signUp({ email: registered.user.email });
+  const response = await request('POST', '/api/auth/register', { token: null, body: payload });
+
+  assert(response.status === 409, `expected 409, received ${response.status}`);
+  assert(response.body.error.details?.email, 'the duplicate field should be reported');
+});
+
+await check('registration cannot be used to create an administrator', async () => {
+  const payload = signUp({ role: 'admin' });
+  const response = await request('POST', '/api/auth/register', { token: null, body: payload });
+
+  assert(response.status === 422, `expected 422, received ${response.status}`);
+  assert(response.body.error.details?.role, 'the rejected role should be reported');
+  assert(!(await User.exists({ email: payload.email })), 'no account should be created');
+});
+
+await check('sign-in succeeds and the token reaches the protected API', async () => {
+  const payload = signUp();
+  await request('POST', '/api/auth/register', { token: null, body: payload });
+
+  const response = await request('POST', '/api/auth/login', {
+    token: null,
+    body: { email: payload.email.toUpperCase(), password: payload.password },
+  });
+
+  assert(response.status === 200, `expected 200, received ${response.status}`);
+  const { token, user } = response.body.data;
+  assert(typeof token === 'string', 'a token should be issued');
+
+  const stored = await User.findOne({ email: payload.email });
+  assert(user.id === stored.id, 'the profile should identify the account');
+  assert(stored.lastLoginAt instanceof Date, 'the sign-in should be recorded on the account');
+
+  const me = await request('GET', '/api/auth/me', { token });
+  assert(me.status === 200, `expected 200 from /me, received ${me.status}`);
+  assert(me.body.data.user.email === payload.email, '/me should return the signed-in account');
+  assert(!JSON.stringify(me.body).includes('passwordHash'), '/me must never expose the hash');
+});
+
+await check('invalid credentials are refused without revealing which part was wrong', async () => {
+  const payload = signUp();
+  await request('POST', '/api/auth/register', { token: null, body: payload });
+
+  const wrongPassword = await request('POST', '/api/auth/login', {
+    token: null,
+    body: { email: payload.email, password: 'definitely-not-it1' },
+  });
+  const unknownEmail = await request('POST', '/api/auth/login', {
+    token: null,
+    body: { email: `nobody.${Date.now()}@campusdesk.edu`, password: payload.password },
+  });
+
+  for (const response of [wrongPassword, unknownEmail]) {
+    assert(response.status === 401, `expected 401, received ${response.status}`);
+    assert(response.body.error.code === 'UNAUTHORIZED', `unexpected code: ${response.body.error.code}`);
+  }
+
+  assert(
+    wrongPassword.body.error.message === unknownEmail.body.error.message,
+    'the two failures must be indistinguishable',
+  );
+});
+
+await check('the role always comes from the account, never from the token', async () => {
+  const forged = jwt.sign({ sub: staff.id, role: 'admin' }, env.jwt.secret, { expiresIn: '5m' });
+
+  const me = await request('GET', '/api/auth/me', { token: forged });
+  assert(me.status === 200, `expected 200, received ${me.status}`);
+  assert(me.body.data.user.role === 'staff', 'a claim in the token must not change the stored role');
+
+  const attempt = await request('PATCH', `/api/students/${created.id}`, {
+    token: forged,
+    body: { dateOfRegistration: '2020-01-01' },
+  });
+  assert(attempt.status === 403, `an admin-only change should be refused, got ${attempt.status}`);
+});
+
+await check('expired and malformed tokens are refused', async () => {
+  const expired = jwt.sign({ sub: staff.id, role: 'staff' }, env.jwt.secret, { expiresIn: '-5s' });
+
+  for (const token of [expired, 'not-a-token', 'a.b.c']) {
+    const response = await request('GET', '/api/auth/me', { token });
+    assert(response.status === 401, `expected 401, received ${response.status}`);
+  }
+});
+
+await check('sign-out answers without claiming server-side revocation', async () => {
+  const response = await request('POST', '/api/auth/logout', { token: staffToken });
+
+  assert(response.status === 200, `expected 200, received ${response.status}`);
+  assert(response.body.data.revokedOnServer === false, 'the API must not claim to revoke a stateless token');
+
+  // The token is still cryptographically valid — the client is what discards
+  // it. This is exactly why the response says so.
+  const after = await request('GET', '/api/auth/me', { token: staffToken });
+  assert(after.status === 200, 'the stateless token remains valid until it expires');
+});
+
+// ---------------------------------------------------------------------------
 // Teardown
 // ---------------------------------------------------------------------------
 

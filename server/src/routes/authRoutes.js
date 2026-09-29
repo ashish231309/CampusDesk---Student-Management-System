@@ -2,12 +2,14 @@ import { Router } from 'express';
 import { getCurrentUser, login, logout, register } from '../controllers/authController.js';
 import { requireAuth } from '../middleware/requireAuth.js';
 import { validate } from '../middleware/validate.js';
-import { emailRule, nameRule, passwordRule } from '../validators/authValidators.js';
+import { authRateLimit } from '../middleware/rateLimit.js';
+import { loginRules, registerRules } from '../validators/authValidators.js';
 
 const router = Router();
 
-router.post('/register', [nameRule, emailRule, passwordRule], validate, register);
-router.post('/login', [emailRule, passwordRule], validate, login);
+// Credential endpoints get the tighter limiter; sign-out does not need one.
+router.post('/register', authRateLimit, registerRules, validate, register);
+router.post('/login', authRateLimit, loginRules, validate, login);
 router.post('/logout', logout);
 
 /** Session bootstrap for the client after a refresh. */

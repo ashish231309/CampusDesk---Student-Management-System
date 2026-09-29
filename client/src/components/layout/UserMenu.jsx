@@ -1,16 +1,17 @@
 import { useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { AnimatePresence, motion } from 'motion/react';
-import { ChevronDown, LogOut, ShieldCheck } from 'lucide-react';
+import { ChevronDown, LogOut } from 'lucide-react';
 
 import { Avatar } from '../ui/Avatar.jsx';
 import { useAuth } from '../../context/authContext.js';
+import { paths } from '../../routes/paths.js';
 import { useToast } from '../../context/toastContext.js';
 import { cx } from '../../utils/cx.js';
 
 /** Account menu in the top bar: identity plus the sign-out action. */
 export const UserMenu = () => {
-  const { user, logout, isPreview } = useAuth();
+  const { user, logout } = useAuth();
   const toast = useToast();
   const navigate = useNavigate();
   const [isOpen, setIsOpen] = useState(false);
@@ -40,7 +41,7 @@ export const UserMenu = () => {
     try {
       await logout();
       toast.info('You have been signed out.', 'Signed out');
-      navigate('/login', { replace: true });
+      navigate(paths.login, { replace: true });
     } finally {
       setIsSigningOut(false);
       setIsOpen(false);
@@ -84,12 +85,9 @@ export const UserMenu = () => {
             <div className="border-b border-line/60 px-4 py-3">
               <p className="text-sm font-semibold text-ink">{user?.name}</p>
               <p className="mt-0.5 truncate text-[12px] text-muted">{user?.email ?? '—'}</p>
-              {isPreview ? (
-                <p className="mt-2 inline-flex items-center gap-1.5 rounded-full bg-beige/70 px-2 py-0.5 text-[11px] font-semibold text-charcoal">
-                  <ShieldCheck className="size-3" aria-hidden="true" />
-                  Preview session
-                </p>
-              ) : null}
+              <p className="mt-2 inline-flex items-center gap-1.5 rounded-full bg-beige/70 px-2 py-0.5 text-[11px] font-semibold text-charcoal capitalize">
+                {user?.role ?? 'staff'}
+              </p>
             </div>
 
             <button

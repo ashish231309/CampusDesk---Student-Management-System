@@ -6,10 +6,10 @@ current and watching enrolment across a campus.
 CampusDesk is built as an npm workspace monorepo: a React client and an Express/MongoDB API that
 share one repository and one set of scripts at the root.
 
-> **Build status:** the foundation and the backend are complete — project structure, design system,
-> API layering, database models, validation, security middleware and a working student API on
-> MongoDB. Authentication is the next milestone; the running preview uses sample records so the
-> interface can be reviewed end to end.
+> **Build status:** the foundation, the backend and authentication are complete — project structure,
+> design system, API layering, database models, validation, security middleware, a working student
+> API on MongoDB, and real registration and sign-in. The signed-in student screens still read a
+> design fixture while they are wired to the API, which is the next milestone.
 
 ---
 
@@ -17,7 +17,7 @@ share one repository and one set of scripts at the root.
 
 | Area | Status |
 | --- | --- |
-| Student registration and sign-in | next milestone |
+| Student registration and sign-in | done — JWT sessions |
 | Automatic student IDs (`CDS-YYYY-NNNN`) | done — generated server-side |
 | Add, edit, view and delete students | API done, interface on sample data |
 | Search, filtering, sorting and pagination | API done, interface on sample data |
@@ -108,13 +108,15 @@ cp client/.env.example client/.env.local     # optional — the defaults work as
 | `BCRYPT_SALT_ROUNDS` | password hashing cost | `10` |
 | `CLIENT_ORIGIN` | comma-separated allowed browser origins | `http://localhost:5173` |
 | `RATE_LIMIT_WINDOW_MS` / `RATE_LIMIT_MAX` | request throttling | `900000` / `500` |
+| `AUTH_RATE_LIMIT_WINDOW_MS` / `AUTH_RATE_LIMIT_MAX` | stricter budget for register and login | `900000` / `30` |
 | `LOG_LEVEL` | log verbosity (`error`…`debug`) | `debug` in development |
 
 Generate a secret with `openssl rand -hex 32`.
 
 **`client/.env.local`** — `VITE_API_BASE_URL` (default `/api`, proxied by Vite),
 `VITE_API_PROXY_TARGET` (default `http://localhost:5000`), `VITE_API_TIMEOUT_MS`.
-Only `VITE_`-prefixed values reach the browser, so never put a secret here.
+Only `VITE_`-prefixed values reach the browser, so never put a secret here. There is no
+client-side switch that can fake a session.
 
 ## Local development
 
@@ -161,9 +163,9 @@ All routes live under `/api` and answer with the same envelope:
 | `GET` | `/api` | endpoint index |
 | `GET` | `/api/health` | liveness |
 | `GET` | `/api/health/ready` | readiness, including database state |
-| `POST` | `/api/auth/register` | validation in place, handler pending |
-| `POST` | `/api/auth/login` | validation in place, handler pending |
-| `POST` | `/api/auth/logout` | pending |
+| `POST` | `/api/auth/register` | create an account — always with the `staff` role |
+| `POST` | `/api/auth/login` | exchange credentials for a session token |
+| `POST` | `/api/auth/logout` | acknowledged by the API; the client discards its token |
 | `GET` | `/api/auth/me` | returns the signed-in user (requires a token) |
 | `GET` | `/api/students` | search, filter, sort, paginate (guarded) |
 | `GET` | `/api/students/stats` | dashboard counts (guarded) |
@@ -172,9 +174,24 @@ All routes live under `/api` and answer with the same envelope:
 | `PATCH` | `/api/students/:id` | update (guarded) |
 | `DELETE` | `/api/students/:id` | remove (guarded) |
 
-The student area requires a bearer token, and a token can only be obtained once the authentication
-handlers land. Endpoints marked *pending* currently answer `501 Not Implemented` rather than
-pretending to work.
+### Authentication
+
+Signing in returns a JSON Web Token; the client stores it and sends it as
+`Authorization: Bearer <token>` on every request. The API verifies the signature and then loads the
+account, so **the role always comes from the database** — a token that claims `role: "admin"` cannot
+grant administrator rights to a staff account.
+
+Accounts are created through `/api/auth/register` as `staff`. That role is assigned by the server and
+cannot be requested: a registration that sends `role` is rejected with a field-level `422`, and no
+public route can create an administrator. Passwords are hashed with bcrypt before they are stored and
+are never returned, logged or echoed back.
+
+Tokens are stateless, so signing out cannot invalidate one on the server; `/api/auth/logout` says so
+explicitly (`revokedOnServer: false`) and the client clears its token and cached user. Requiring a
+shorter `JWT_EXPIRES_IN`, or adding a revocation list, are the ways to tighten that later. A request
+carrying an expired, malformed or wrongly-signed token gets the usual `401` envelope.
+
+The student area requires that token; without one every student endpoint answers `401`.
 
 List queries combine: `?search=`, `?status=`, `?year=`, `?department=`, `?course=`, `?sort=`,
 `?order=`, `?page=` and `?limit=` — for example
@@ -182,6 +199,16 @@ List queries combine: `?search=`, `?status=`, `?year=`, `?department=`, `?course
 
 ```bash
 curl http://localhost:5000/api/health
+
+# create an account, then use the token it returns
+curl -X POST http://localhost:5000/api/auth/register \
+  -H "Content-Type: application/json" \
+  -d '{"name":"Ananya Sharma","email":"ananya@campusdesk.edu","password":"passw0rd123"}'
+
+curl -X POST http://localhost:5000/api/auth/login \
+  -H "Content-Type: application/json" \
+  -d '{"email":"ananya@campusdesk.edu","password":"passw0rd123"}'
+
 curl http://localhost:5000/api/students -H "Authorization: Bearer <token>"
 ```
 
@@ -195,9 +222,11 @@ npm run build       # production client build
 ```
 
 `npm run verify` is the fast suite: it exercises the request pipeline over HTTP with the models
-stubbed, so it runs anywhere. `npm run verify:db` is the one that proves the database behaviour —
-creation, generated IDs under concurrent writes, search, filters, sorting, pagination, statistics
-and deletion. It uses `VERIFY_MONGODB_URI` if you set one, otherwise your `MONGODB_URI` with the
+stubbed, so it runs anywhere — including registration, sign-in, token verification, expired and
+forged tokens, the role rules and the removal of the old preview sign-in. `npm run verify:db` is the
+one that proves the database behaviour — accounts and hashed passwords, sign-in against a stored
+hash, student creation, generated IDs under concurrent writes, search, filters, sorting, pagination,
+statistics and deletion. It uses `VERIFY_MONGODB_URI` if you set one, otherwise your `MONGODB_URI` with the
 database name changed to `campusdesk_verify`, otherwise an ephemeral server started by
 `mongodb-memory-server`. If none can be reached it prints a skip notice and exits with code 2
 rather than reporting a pass it did not earn.

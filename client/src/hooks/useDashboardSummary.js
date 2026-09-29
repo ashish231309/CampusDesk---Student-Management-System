@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { sampleStudents } from '../data/sampleStudents.js';
 
 /**
- * Dashboard summary. Aggregates the preview records locally; the equivalent
+ * Dashboard summary. Aggregates the design fixture locally for now; the equivalent
  * server-side aggregation already lives in `server/src/services/studentService.js`
  * and will back this hook once students are stored in MongoDB.
  */

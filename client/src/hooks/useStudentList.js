@@ -5,7 +5,8 @@ import { PAGE_SIZE } from '../constants/student.js';
 /**
  * Student list data source.
  *
- * Stage 01 reads the preview records in `data/sampleStudents.js` and applies the
+ * Still reading the design fixture in `data/sampleStudents.js` (see the note
+ * there); it applies the
  * same search, filter, sort and pagination the API will apply server-side, so
  * the table, filters and empty states are exercised for real. Swapping the body
  * of `load` for `studentService.list(query)` is the only change needed once the

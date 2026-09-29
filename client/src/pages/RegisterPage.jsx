@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { motion } from 'motion/react';
-import { ArrowLeft, CircleAlert, Eye, EyeOff, LogIn, UserPlus } from 'lucide-react';
+import { ArrowLeft, CircleAlert, Eye, EyeOff, ShieldCheck, UserPlus } from 'lucide-react';
 
 import { Logo } from '../components/branding/Logo.jsx';
 import { Button } from '../components/ui/Button.jsx';
@@ -11,26 +11,44 @@ import { useToast } from '../context/toastContext.js';
 import { useForm } from '../hooks/useForm.js';
 import { appConfig } from '../config/app.js';
 import { paths } from '../routes/paths.js';
-import { email as emailRule, required } from '../utils/validation.js';
+import { email as emailRule, maxLength, minLength, required } from '../utils/validation.js';
 
-/**
- * Only presence is checked here. The API decides whether the credentials are
- * valid, and it deliberately does not tell the client which password rules an
- * account was created under.
- */
+/** Mirrors the API's password policy so the user is told before the round trip. */
+const hasLetterAndNumber = (value) => {
+  const text = String(value ?? '');
+  if (!text) return undefined;
+  if (!/[A-Za-z]/.test(text)) return 'Include at least one letter.';
+  if (!/\d/.test(text)) return 'Include at least one number.';
+  return undefined;
+};
+
+const matchesPassword = (value, values) =>
+  value === values.password ? undefined : 'The two passwords do not match.';
+
 const schema = {
+  name: [
+    required('Enter your full name.'),
+    minLength(2, 'Name must be at least 2 characters.'),
+    maxLength(80, 'Name cannot exceed 80 characters.'),
+  ],
   email: [required('Enter your email address.'), emailRule()],
-  password: [required('Enter your password.')],
+  password: [
+    required('Choose a password.'),
+    minLength(8, 'Passwords are at least 8 characters.'),
+    maxLength(72, 'Passwords cannot exceed 72 characters.'),
+    hasLetterAndNumber,
+  ],
+  confirmPassword: [required('Repeat your password.'), matchesPassword],
 };
 
 const HIGHLIGHTS = [
-  'One record per student, from registration to graduation.',
-  'Search, filter and review the whole register in seconds.',
-  'Enrolment numbers that reconcile without a spreadsheet.',
+  'Create your own account in a minute — no provisioning ticket needed.',
+  'Staff accounts manage the student register; administrators can do more.',
+  'Your session stays signed in across refreshes until you sign out.',
 ];
 
-export default function LoginPage() {
-  const { login, isAuthenticated } = useAuth();
+export default function RegisterPage() {
+  const { register, isAuthenticated } = useAuth();
   const toast = useToast();
   const navigate = useNavigate();
   const location = useLocation();
@@ -43,18 +61,21 @@ export default function LoginPage() {
   }, [isAuthenticated, navigate, redirectTo]);
 
   const form = useForm({
-    initialValues: { email: '', password: '' },
+    initialValues: { name: '', email: '', password: '', confirmPassword: '' },
     schema,
     onSubmit: async (values) => {
       try {
-        await login(values);
-        toast.success('Welcome back to CampusDesk.', 'Signed in');
+        // Only the API's own fields are sent — never `confirmPassword`, and
+        // never a role: the server decides what a new account may do.
+        await register({
+          name: values.name,
+          email: values.email,
+          password: values.password,
+        });
+        toast.success('Your account is ready. Welcome to CampusDesk.', 'Account created');
         navigate(redirectTo, { replace: true });
       } catch (error) {
-        // `useForm` also merges any field-level `details` the API sent back, so
-        // a validation failure lands on the input and a rejected sign-in is
-        // explained in one sentence.
-        toast.error(error.message, 'Sign in failed');
+        toast.error(error.message, 'Could not create your account');
       }
     },
   });
@@ -88,12 +109,15 @@ export default function LoginPage() {
 
         <div className="relative max-w-md">
           <h2 className="text-[30px] leading-tight font-semibold text-canvas">
-            The register your campus actually keeps up with.
+            Two minutes now, a tidy register later.
           </h2>
 
           <ul className="mt-6 space-y-3">
             {HIGHLIGHTS.map((highlight) => (
-              <li key={highlight} className="flex items-start gap-3 text-sm leading-relaxed text-canvas/75">
+              <li
+                key={highlight}
+                className="flex items-start gap-3 text-sm leading-relaxed text-canvas/75"
+              >
                 <span className="mt-1.5 size-1.5 shrink-0 rounded-full bg-beige" aria-hidden="true" />
                 {highlight}
               </li>
@@ -114,11 +138,11 @@ export default function LoginPage() {
           className="mx-auto w-full max-w-[420px]"
         >
           <Link
-            to={paths.home}
+            to={paths.login}
             className="inline-flex items-center gap-1.5 text-[13px] font-medium text-muted transition-colors hover:text-ink"
           >
             <ArrowLeft className="size-3.5" aria-hidden="true" />
-            Back to home
+            Back to sign in
           </Link>
 
           <div className="mt-6 lg:hidden">
@@ -126,10 +150,10 @@ export default function LoginPage() {
           </div>
 
           <h1 className="mt-6 text-[26px] leading-tight font-semibold tracking-tight text-ink">
-            Sign in to CampusDesk
+            Create your CampusDesk account
           </h1>
           <p className="mt-2 text-sm leading-relaxed text-muted">
-            Sign in with the campus account you registered on this desk.
+            New accounts start with staff access to the student register.
           </p>
 
           {form.submitError ? (
@@ -143,6 +167,19 @@ export default function LoginPage() {
           ) : null}
 
           <form className="mt-6 space-y-4" onSubmit={form.handleSubmit} noValidate>
+            <Field label="Full name" required error={form.errorFor('name')}>
+              <TextInput
+                type="text"
+                name="name"
+                autoComplete="name"
+                placeholder="Ananya Sharma"
+                value={form.values.name}
+                onChange={form.handleChange('name')}
+                onBlur={form.handleBlur('name')}
+                hasError={Boolean(form.errorFor('name'))}
+              />
+            </Field>
+
             <Field label="Email address" required error={form.errorFor('email')}>
               <TextInput
                 type="email"
@@ -156,11 +193,16 @@ export default function LoginPage() {
               />
             </Field>
 
-            <Field label="Password" required error={form.errorFor('password')}>
+            <Field
+              label="Password"
+              required
+              error={form.errorFor('password')}
+              hint="At least 8 characters, including a letter and a number."
+            >
               <TextInput
                 type={showPassword ? 'text' : 'password'}
                 name="password"
-                autoComplete="current-password"
+                autoComplete="new-password"
                 placeholder="••••••••"
                 value={form.values.password}
                 onChange={form.handleChange('password')}
@@ -183,28 +225,45 @@ export default function LoginPage() {
               </button>
             </Field>
 
+            <Field label="Confirm password" required error={form.errorFor('confirmPassword')}>
+              <TextInput
+                type={showPassword ? 'text' : 'password'}
+                name="confirmPassword"
+                autoComplete="new-password"
+                placeholder="••••••••"
+                value={form.values.confirmPassword}
+                onChange={form.handleChange('confirmPassword')}
+                onBlur={form.handleBlur('confirmPassword')}
+                hasError={Boolean(form.errorFor('confirmPassword'))}
+              />
+            </Field>
+
             <Button
               type="submit"
               size="lg"
-              icon={LogIn}
+              icon={UserPlus}
               isLoading={form.isSubmitting}
               className="w-full"
             >
-              Sign in
+              Create account
             </Button>
           </form>
 
-          <p className="mt-6 text-center text-[13px] text-muted">
-            New to CampusDesk?{' '}
-            <Link
-              to={paths.register}
-              className="focus-ring inline-flex items-center gap-1 rounded font-semibold text-ink underline decoration-line underline-offset-4 transition-colors hover:decoration-charcoal"
-            >
-              <UserPlus className="size-3.5" aria-hidden="true" />
-              Create an account
-            </Link>
+          <p className="mt-5 flex items-start gap-2 rounded-card border border-line bg-surface px-4 py-3 text-[12px] leading-relaxed text-muted">
+            <ShieldCheck className="mt-0.5 size-4 shrink-0 text-muted" aria-hidden="true" />
+            Roles are assigned by CampusDesk, never by the sign-up form. An administrator can raise
+            an account's access later.
           </p>
 
+          <p className="mt-6 text-center text-[13px] text-muted">
+            Already have an account?{' '}
+            <Link
+              to={paths.login}
+              className="focus-ring rounded font-semibold text-ink underline decoration-line underline-offset-4 transition-colors hover:decoration-charcoal"
+            >
+              Sign in
+            </Link>
+          </p>
         </motion.div>
       </main>
     </div>

@@ -11,6 +11,7 @@
 process.env.NODE_ENV = 'test';
 
 const { once } = await import('node:events');
+const { readFileSync, readdirSync } = await import('node:fs');
 const express = (await import('express')).default;
 const jwt = (await import('jsonwebtoken')).default;
 
@@ -472,7 +473,9 @@ await check('the hash is hidden by default and stripped from JSON', () => {
 
   const json = user.toJSON();
   assert(json.passwordHash === undefined, 'the hash must never leave the API');
-  assert(json.role === 'admin', 'a role should default to admin');
+  assert(json.password === undefined, 'the password virtual must never be serialised');
+  assert(json._id === undefined, 'the raw id should not be exposed alongside `id`');
+  assert(json.role === 'staff', 'a new account must default to the least privileged role');
 });
 
 await check('user email is unique and normalised', () => {
@@ -651,7 +654,9 @@ const staffToken = jwt.sign({ sub: '64b7f9c2e1a2b3c4d5e6f7a8', role: 'staff' }, 
 
 const fakeUser = { id: '64b7f9c2e1a2b3c4d5e6f7a8', name: 'Campus Administrator', role: 'admin' };
 
-const MODELS = { Student, User };
+// `User.prototype` is included so a real document can be saved (and its
+// password virtual hashed) without a database in the authentication section.
+const MODELS = { Student, User, 'User.prototype': User.prototype };
 
 /** Patches model statics for one test, restoring them afterwards. */
 const withModelStubs = async (stubs, run) => {
@@ -1079,6 +1084,346 @@ await check('database errors map to the documented envelopes', async () => {
 });
 
 // ---------------------------------------------------------------------------
+section('Authentication (MongoDB stubbed, no database)');
+// ---------------------------------------------------------------------------
+
+/**
+ * The sign-in flow is exercised against the real model, validators and
+ * controller — only the database calls are stubbed. `makeAccount` builds a real
+ * User document with a genuinely bcrypt-hashed password, so password
+ * verification is the production code path and not a stand-in.
+ */
+const makeAccount = async ({
+  name = 'Records Officer',
+  email = 'officer@campusdesk.edu',
+  role = 'staff',
+  password = 'passw0rd123',
+} = {}) => {
+  const account = new User({ name, email, role });
+  account.password = password;
+  await account.validate();
+  return account;
+};
+
+/** `User.findOne(...)` returns a query; `.select()` just returns it again. */
+const selectable = (document) => ({
+  select() {
+    return this;
+  },
+  then(resolve, reject) {
+    return Promise.resolve(document).then(resolve, reject);
+  },
+});
+
+/** No document may reach a database in this section: writes are recorded only. */
+const noWrites = (sink = []) => ({
+  'User.prototype': {
+    // Mongoose validates before it writes, so the stand-in does too — that is
+    // what makes the password virtual hash for real in these checks.
+    async save() {
+      await this.validate();
+      sink.push(this);
+      return this;
+    },
+  },
+});
+
+let wrongPassword = null;
+const loginAttempt = (body) => stubRequest('POST', '/api/auth/login', { token: null, body });
+const registerAttempt = (body) => stubRequest('POST', '/api/auth/register', { token: null, body });
+const authFailures = [];
+
+await check('registration stores a bcrypt hash and answers 201', async () => {
+  const saved = [];
+
+  const response = await withModelStubs(
+    { ...noWrites(saved), User: { exists: async () => null } },
+    () =>
+      registerAttempt({
+        name: '  Ananya Sharma  ',
+        email: 'Ananya.Sharma@CampusDesk.edu',
+        password: 'passw0rd123',
+      }),
+  );
+
+  assert(response.status === 201, `expected 201, received ${response.status}`);
+
+  const account = saved[0];
+  assert(Boolean(account), 'the new account should be saved');
+  assert(/^\$2[aby]\$/.test(account.passwordHash), 'the password should be stored as a bcrypt hash');
+  assert(account.passwordHash !== 'passw0rd123', 'the plaintext must never be stored');
+  assert(account._pendingPassword === undefined, 'the plaintext must not stay on the document');
+  assert(account.name === 'Ananya Sharma', 'the name should be trimmed');
+  assert(account.email === 'ananya.sharma@campusdesk.edu', 'the email should be lowercased');
+  assert(account.role === 'staff', 'a public registration must create a staff account');
+
+  const raw = JSON.stringify(response.body);
+  assert(!raw.includes('passwordHash'), 'the hash must never be returned');
+  assert(!raw.includes('passw0rd123'), 'the plaintext must never be returned');
+  assert(response.body.data.user.role === 'staff', 'the response should report the assigned role');
+
+  const payload = jwt.verify(response.body.data.token, env.jwt.secret);
+  assert(payload.sub === account.id, 'the token should identify the new account');
+});
+
+await check('registration refuses a client-supplied role before any lookup', async () => {
+  let lookedUp = false;
+
+  const response = await withModelStubs(
+    {
+      ...noWrites(),
+      User: {
+        exists: async () => {
+          lookedUp = true;
+          return null;
+        },
+      },
+    },
+    () =>
+      registerAttempt({
+        name: 'Mallory',
+        email: 'mallory@campusdesk.edu',
+        password: 'passw0rd123',
+        role: 'admin',
+      }),
+  );
+
+  assert(response.status === 422, `expected 422, received ${response.status}`);
+  assert(response.body.error.details.role, 'the rejected role should be reported');
+  assert(lookedUp === false, 'the request should be rejected before the database is touched');
+});
+
+await check('registration rejects invalid details field by field', async () => {
+  const cases = [
+    [{ email: 'person@campusdesk.edu', password: 'passw0rd123' }, 'name'],
+    [{ name: 'Ananya', password: 'passw0rd123' }, 'email'],
+    [{ name: 'Ananya', email: 'not-an-email', password: 'passw0rd123' }, 'email'],
+    [{ name: 'Ananya', email: 'person@campusdesk.edu' }, 'password'],
+    [{ name: 'Ananya', email: 'person@campusdesk.edu', password: 'short' }, 'password'],
+    [{ name: 'A', email: 'person@campusdesk.edu', password: 'passw0rd123' }, 'name'],
+    [{ name: 'Ananya', email: 'person@campusdesk.edu', password: 'passwordonly' }, 'password'],
+  ];
+
+  for (const [body, field] of cases) {
+    const response = await withModelStubs({ ...noWrites(), User: { exists: async () => null } }, () =>
+      registerAttempt(body),
+    );
+
+    assert(response.status === 422, `expected 422, received ${response.status}`);
+    assert(response.body.error.details?.[field], `\`${field}\` should be reported`);
+    authFailures.push(response);
+  }
+});
+
+await check('registration reports a duplicate email as 409', async () => {
+  const response = await withModelStubs(
+    { ...noWrites(), User: { exists: async () => ({ _id: 'taken' }) } },
+    () =>
+      registerAttempt({
+        name: 'Ananya Sharma',
+        email: 'ananya@campusdesk.edu',
+        password: 'passw0rd123',
+      }),
+  );
+
+  assert(response.status === 409, `expected 409, received ${response.status}`);
+  assert(response.body.error.code === 'CONFLICT', `unexpected code: ${response.body.error.code}`);
+  assert(response.body.error.details.email, 'the duplicate field should be reported');
+  authFailures.push(response);
+});
+
+await check('sign-in returns a token and the safe profile', async () => {
+  const account = await makeAccount();
+  let touched = null;
+
+  const response = await withModelStubs(
+    {
+      ...noWrites(),
+      User: {
+        findOne: (filter) => {
+          touched = filter;
+          return selectable(account);
+        },
+      },
+    },
+    () => loginAttempt({ email: 'Officer@CampusDesk.edu', password: 'passw0rd123' }),
+  );
+
+  assert(response.status === 200, `expected 200, received ${response.status}`);
+  assert(touched.email === 'officer@campusdesk.edu', 'the email should be normalised before the lookup');
+
+  const { user, token } = response.body.data;
+  assert(typeof token === 'string' && token.split('.').length === 3, 'a JWT should be returned');
+  assert(user.id === account.id, 'the safe profile should identify the account');
+  assert(user.role === 'staff', 'the profile should carry the stored role');
+  assert(!JSON.stringify(response.body).includes('passwordHash'), 'the hash must never be returned');
+  assert(user.lastLoginAt, 'a successful sign-in should be recorded on the account');
+
+  const payload = jwt.verify(token, env.jwt.secret);
+  assert(payload.sub === account.id && payload.role === 'staff', 'unexpected token claims');
+});
+
+await check('sign-in rejects a wrong password with a generic 401', async () => {
+  const account = await makeAccount();
+
+  const response = await withModelStubs(
+    { ...noWrites(), User: { findOne: () => selectable(account) } },
+    () => loginAttempt({ email: account.email, password: 'wrong-passw0rd' }),
+  );
+
+  assert(response.status === 401, `expected 401, received ${response.status}`);
+  assert(response.body.error.code === 'UNAUTHORIZED', `unexpected code: ${response.body.error.code}`);
+  authFailures.push(response);
+  wrongPassword = response;
+});
+
+await check('an unknown email is answered exactly like a wrong password', async () => {
+  const response = await withModelStubs(
+    { ...noWrites(), User: { findOne: () => selectable(null) } },
+    () => loginAttempt({ email: 'nobody@campusdesk.edu', password: 'passw0rd123' }),
+  );
+
+  assert(response.status === 401, `expected 401, received ${response.status}`);
+  assert(
+    response.body.error.message === wrongPassword.body.error.message &&
+      response.body.error.code === wrongPassword.body.error.code,
+    'the two failures must be indistinguishable',
+  );
+  assert(
+    !/not found|no account|unknown|not registered|incorrect password/i.test(response.body.error.message),
+    'the message must not reveal which part was wrong',
+  );
+  authFailures.push(response);
+});
+
+await check('sign-in does not apply the registration password policy', async () => {
+  const account = await makeAccount({ password: 'abc' });
+
+  const response = await withModelStubs(
+    { ...noWrites(), User: { findOne: () => selectable(account) } },
+    () => loginAttempt({ email: account.email, password: 'abc' }),
+  );
+
+  assert(response.status === 200, `expected 200, received ${response.status}`);
+  assert(response.body.data.token, 'an existing account must still be able to sign in');
+});
+
+await check('the session token carries only what it needs', async () => {
+  const account = await makeAccount();
+
+  const response = await withModelStubs(
+    { ...noWrites(), User: { findOne: () => selectable(account) } },
+    () => loginAttempt({ email: account.email, password: 'passw0rd123' }),
+  );
+
+  const claims = Object.keys(jwt.decode(response.body.data.token)).sort().join(',');
+  assert(claims === 'exp,iat,role,sub', `unexpected claims: ${claims}`);
+
+  const raw = Buffer.from(response.body.data.token.split('.')[1], 'base64url').toString();
+  assert(!raw.includes('passwordHash') && !raw.includes('@'), 'no sensitive value belongs in a token');
+});
+
+await check('a token for an account that no longer exists is refused', async () => {
+  const response = await withModelStubs(
+    { ...noWrites(), User: { findById: async () => null } },
+    () => stubRequest('GET', '/api/auth/me'),
+  );
+
+  assert(response.status === 401, `expected 401, received ${response.status}`);
+  authFailures.push(response);
+});
+
+await check('me returns the signed-in account without the hash', async () => {
+  const account = await makeAccount();
+
+  const response = await withModelStubs(
+    { ...noWrites(), User: { findById: async () => account } },
+    () => stubRequest('GET', '/api/auth/me'),
+  );
+
+  assert(response.status === 200, `expected 200, received ${response.status}`);
+
+  const user = response.body.data.user;
+  assert(user.id === account.id && user.email === account.email, 'the profile should identify the account');
+  assert(user.role === 'staff', 'the profile should carry the role');
+  assert(user.passwordHash === undefined, 'the hash must never be serialised');
+  assert(user.password === undefined, 'the password virtual must never be serialised');
+  assert(user.__v === undefined, 'internal fields should be stripped');
+
+  const allowed = ['id', 'name', 'email', 'role', 'lastLoginAt', 'createdAt', 'updatedAt'];
+  const unexpected = Object.keys(user).filter((key) => !allowed.includes(key));
+  assert(unexpected.length === 0, `unexpected profile fields: ${unexpected.join(', ')}`);
+});
+
+await check('an expired token is rejected with 401', async () => {
+  const expired = jwt.sign({ sub: fakeUser.id, role: 'staff' }, env.jwt.secret, { expiresIn: '-5s' });
+  const response = await stubRequest('GET', '/api/auth/me', { token: expired });
+
+  assert(response.status === 401, `expected 401, received ${response.status}`);
+  assert(response.body.error.code === 'UNAUTHORIZED', `unexpected code: ${response.body.error.code}`);
+  assert(!/jwt|token expired|JsonWebTokenError/i.test(response.body.error.message), 'internals must not leak');
+  authFailures.push(response);
+});
+
+await check('a token signed with another secret is rejected with 401', async () => {
+  const forged = jwt.sign({ sub: fakeUser.id, role: 'admin' }, 'not-the-campusdesk-secret', {
+    expiresIn: '5m',
+  });
+  const response = await stubRequest('GET', '/api/auth/me', { token: forged });
+
+  assert(response.status === 401, `expected 401, received ${response.status}`);
+  authFailures.push(response);
+});
+
+await check('a malformed token is rejected with 401', async () => {
+  for (const token of ['not-a-token', 'a.b.c', '']) {
+    const response = await stubRequest('GET', '/api/auth/me', { token });
+
+    assert(response.status === 401, `expected 401 for \`${token}\`, received ${response.status}`);
+    authFailures.push(response);
+  }
+});
+
+await check('sign-out answers the standard envelope without pretending to revoke', async () => {
+  const withToken = await stubRequest('POST', '/api/auth/logout');
+  const withoutToken = await stubRequest('POST', '/api/auth/logout', { token: null });
+
+  assert(withToken.status === 200, `expected 200, received ${withToken.status}`);
+  assert(withToken.body.success === true, 'the envelope should report success');
+  assert(withToken.body.data.revokedOnServer === false, 'the API must not claim server-side revocation');
+  assert(typeof withToken.body.data.message === 'string', 'the client should get a clear instruction');
+  assert(withoutToken.status === 200, 'signing out with no token must still succeed');
+});
+
+await check('every authentication failure uses the standard envelope', () => {
+  assert(authFailures.length >= 6, 'the surrounding checks should have produced failures');
+
+  for (const response of authFailures) {
+    assert(response.body.success === false, 'success must be false');
+    assert(typeof response.body.error?.code === 'string', 'a machine-readable code is required');
+    assert(typeof response.body.error?.message === 'string', 'a human-readable message is required');
+    assert(!('stack' in (response.body.error ?? {})), 'a stack trace must never be returned');
+  }
+});
+
+await check('credential endpoints carry a tighter limiter', async () => {
+  const { authRateLimit } = await import('../src/middleware/rateLimit.js');
+  assert(typeof authRateLimit === 'function', 'the limiter should be a middleware');
+
+  const { env: current } = await import('../src/config/env.js');
+  assert(
+    current.security.authRateLimit.max < current.security.rateLimit.max,
+    'the credential budget must be stricter than the global one',
+  );
+
+  const source = readFileSync(new URL('../src/routes/authRoutes.js', import.meta.url), 'utf8');
+  for (const endpoint of ["'/register'", "'/login'"]) {
+    const line = source.split('\n').find((row) => row.includes(endpoint));
+    assert(line?.includes('authRateLimit'), `${endpoint} should use the tighter limiter`);
+  }
+});
+
+// ---------------------------------------------------------------------------
 section('HTTP surface');
 // ---------------------------------------------------------------------------
 
@@ -1140,12 +1485,20 @@ await check('malformed JSON is rejected with 400', async () => {
   assert(body.error.code === 'BAD_REQUEST', `unexpected code: ${body.error.code}`);
 });
 
-await check('login validation returns field-level details', async () => {
-  const response = await post('/api/auth/login', { email: 'not-an-email', password: 'short' });
-  const body = await response.json();
+await check('login validation reports missing fields but not password strength', async () => {
+  const missing = await post('/api/auth/login', { email: 'not-an-email', password: '' });
+  const missingBody = await missing.json();
 
-  assert(response.status === 422, `expected 422, received ${response.status}`);
-  assert(body.error.details.email && body.error.details.password, 'both fields should be reported');
+  assert(missing.status === 422, `expected 422, received ${missing.status}`);
+  assert(
+    missingBody.error.details.email && missingBody.error.details.password,
+    'both fields should be reported',
+  );
+
+  // A short password is a *password*, not a validation failure: the policy is
+  // only enforced when an account is created, so older accounts still sign in.
+  const weak = await post('/api/auth/login', { email: 'someone@campusdesk.edu', password: 'abc' });
+  assert(weak.status !== 422, `a short password must reach the credential check, got ${weak.status}`);
 });
 
 await check('signup validation rejects a weak password', async () => {
@@ -1242,6 +1595,73 @@ await check('a database failure never leaks internals', async () => {
   assert(!/MongoServerSelectionError|MongooseError|ECONNREFUSED/i.test(raw), 'driver internals must not leak');
   assert(!/"stack"/.test(raw), 'operational failures should not include a stack trace');
   assert(response.status === 503, 'the caller should receive a 503');
+});
+
+// ---------------------------------------------------------------------------
+section('Client authentication wiring (static)');
+// ---------------------------------------------------------------------------
+
+/**
+ * The browser bundle cannot be rendered from Node, so these checks cover the
+ * parts that are decidable from the source: that no development sign-in
+ * mechanism survived, and that the client talks to the real endpoints through
+ * the shared authentication state rather than to a stand-in.
+ */
+const clientRoot = new URL('../../client/src/', import.meta.url);
+
+const readTree = (directory) =>
+  readdirSync(directory, { withFileTypes: true }).flatMap((entry) => {
+    const child = new URL(`${entry.name}${entry.isDirectory() ? '/' : ''}`, directory);
+    if (entry.isDirectory()) return readTree(child);
+    return /\.(js|jsx)$/.test(entry.name) ? [readFileSync(child, 'utf8')] : [];
+  });
+
+const clientSource = readTree(clientRoot).join('\n');
+const clientEnvTemplate = readFileSync(new URL('../../client/.env.example', import.meta.url), 'utf8');
+
+await check('no preview authentication mechanism remains', () => {
+  const removed = [
+    'VITE_PREVIEW_SESSION',
+    'PREVIEW_USER',
+    'previewSession',
+    'enterPreview',
+    'isPreviewAvailable',
+    'isPreview',
+  ];
+
+  for (const identifier of removed) {
+    assert(!clientSource.includes(identifier), `\`${identifier}\` still appears in the client source`);
+    assert(!clientEnvTemplate.includes(identifier), `\`${identifier}\` still appears in the env template`);
+  }
+});
+
+await check('no hardcoded account can stand in for a session', () => {
+  assert(!clientSource.includes('admin@campusdesk.edu'), 'the preview account email is still present');
+  assert(!clientSource.includes('Campus Administrator'), 'the preview account name is still present');
+});
+
+await check('the client uses the real authentication endpoints', () => {
+  const service = readFileSync(new URL('services/authService.js', clientRoot), 'utf8');
+
+  for (const endpoint of ['/auth/register', '/auth/login', '/auth/logout', '/auth/me']) {
+    assert(service.includes(endpoint), `authService should call ${endpoint}`);
+  }
+});
+
+await check('the login and registration pages share one authentication state', () => {
+  const login = readFileSync(new URL('pages/LoginPage.jsx', clientRoot), 'utf8');
+  const register = readFileSync(new URL('pages/RegisterPage.jsx', clientRoot), 'utf8');
+  const provider = readFileSync(new URL('context/AuthProvider.jsx', clientRoot), 'utf8');
+  const routes = readFileSync(new URL('routes/AppRoutes.jsx', clientRoot), 'utf8');
+
+  assert(login.includes('useAuth(') && register.includes('useAuth('), 'both pages should use the shared state');
+  assert(!login.includes('authToken') && !register.includes('authToken'), 'pages must not touch the token');
+  assert(
+    /authService\s*\.\s*me\(\)/.test(provider),
+    'the provider restores the session through /auth/me',
+  );
+  assert(provider.includes('onUnauthorized'), 'the provider should react to a rejected token');
+  assert(routes.includes('paths.register'), 'the registration route should be public');
 });
 
 // ---------------------------------------------------------------------------

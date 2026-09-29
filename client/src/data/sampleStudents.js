@@ -1,12 +1,18 @@
 /**
- * Stage 01 preview records.
+ * Design fixture — NOT production data.
  *
- * The student list, detail view and dashboard are built against this shape
- * while the student endpoints are still being implemented. It matches the
- * `Student` model field for field, so switching the hooks in
- * `src/hooks/useStudentList.js`, `useStudent.js` and `useDashboardSummary.js`
- * over to the live API requires no changes in the pages themselves.
+ * The student list, detail view and dashboard are still built against this
+ * shape; the API that returns real records already exists
+ * (`client/src/services/studentService.js`), and wiring the pages to it is a
+ * later stage. Nothing in the authentication flow reads this file.
+ *
+ * `SAMPLE_DATA_IN_USE` keeps that honest: while it is true the shell shows a
+ * "Sample records" chip, and when the hooks switch to the API the flag flips to
+ * false and the chip disappears. It matches the `Student` model field for
+ * field, so the switch requires no changes in the pages themselves.
  */
+export const SAMPLE_DATA_IN_USE = true;
+
 export const sampleStudents = [
   {
     id: '1',
