@@ -31,6 +31,7 @@ router.get('/', (_req, res) => {
         students: [
           'GET    /api/students',
           'GET    /api/students/stats',
+          'GET    /api/students/filters',
           'POST   /api/students',
           'GET    /api/students/:id',
           'PATCH  /api/students/:id',

@@ -2109,7 +2109,24 @@ await check('GET /api returns the endpoint index', async () => {
 
   assert(response.status === 200, `expected 200, received ${response.status}`);
   assert(body.success === true, 'response envelope should report success');
-  assert(body.data.endpoints.students.length === 6, 'six student endpoints should be advertised');
+  // The index is the API's own description of itself, so it is compared against
+  // the mounted surface rather than counted: an endpoint added to the router and
+  // forgotten here would still be a lie in the first thing a developer reads.
+  const advertised = body.data.endpoints.students.map((line) => line.trim().replace(/\s+/g, ' '));
+  const mounted = [
+    'GET /api/students',
+    'GET /api/students/stats',
+    'GET /api/students/filters',
+    'POST /api/students',
+    'GET /api/students/:id',
+    'PATCH /api/students/:id',
+    'DELETE /api/students/:id',
+  ];
+
+  assert(
+    advertised.join(' | ') === mounted.join(' | '),
+    `the index should advertise exactly the mounted student endpoints, got: ${advertised.join(', ')}`,
+  );
 });
 
 await check('GET /api/health reports the service as ok', async () => {
@@ -3602,7 +3619,7 @@ await check('filters advertise themselves and say how many are narrowing the reg
   );
 });
 
-await check('search keeps its Stage 05 semantics and its Stage 08 feedback', () => {
+await check('search keeps its server semantics and its user feedback', () => {
   const controller = sourceOf('hooks/useStudentRegister.js');
   const search = sourceOf('components/ui/SearchInput.jsx');
   const toolbar = sourceOf('components/students/StudentRegisterToolbar.jsx');
@@ -3657,7 +3674,7 @@ await check('page, sort and page size stay allowlisted, server-driven and never 
 });
 
 // ---------------------------------------------------------------------------
-section('Motion & interactive UX (Stage 10)');
+section('Motion & interactive UX');
 // ---------------------------------------------------------------------------
 
 /** Every `duration: 0.32` inside a motion transition, with the file it came from. */
@@ -3983,7 +4000,7 @@ await check('animated surfaces keep their focus, their labels and their state', 
 });
 
 // ---------------------------------------------------------------------------
-section('Security, input hardening & responsive integrity (Stage 11)');
+section('Security, input hardening & responsive integrity');
 // ---------------------------------------------------------------------------
 
 /**
